@@ -1,0 +1,70 @@
+- handle required, default, and actions
+    - help isn't required, but doesn't need a default
+- properly handle posn + flag argument ordering, nargs 
+    - print_usage: all flags first w/ brackets, posn after
+    - assume currnt posn if they exist, if flag appears then parse that instead
+    - (any/one+) --> exact; pull from prev var posn else insufficient args  
+    - write out tests for other scenarios
+        - posn only
+        - flag posn mix
+    - v|o --> v; second v doesn't get anything
+    - v|o --> o; second o gets 1
+- count -vvv action support?
+- test error cases
+    - different actions w/ default, required, nargs, flag vs posn arg,
+
+- impl parser default
+    - error out if can't String --> T support, or just warning
+- build arg parser desp
+- argument & parser builder methods
+    - with_default, with_const, etc.
+- how to test help & versions
+- other tests
+    - nargs range
+    - allow_abbrv
+    - how to do boolean flags
+    - test can't fetch flag w/ abbre
+    - prefix chargs
+        - mixed gives error
+- suberror types for action, prefix error?
+- argparser print methods
+- add_subparser
+- argparser alt parse method
+- parent + child argparser
+- argparser conflict_handler¶
+- argument group
+    - mutually exclusive group
+- fromfile_prefix_chars
+    - check for conflicts with PrefixChars
+- integration tests
+- check library release requirements
+- only make necessary methods pub
+- keep private
+    - argument name
+- write documentation
+- how to release library guide
+
+- will not support / deliberatly not supported
+    - posn arguments don't support required
+    - convert_arg_line_to_args as it required manual overriding in python
+    - error on nonsensical argument pairings
+    - ArgumentParser.exit_on_error
+        - raise errors to user in rust like fashion
+    - default only supported for action='store'?
+        - doesn't interface with type system
+    - won't support specific positional argument splitting 
+    - positional argument only supported for action?
+
+- note
+    - can't have non-required positional arguments
+    - clone retrieval so can be used multiple times
+    - can't have non-store action positional argument 
+    - default value only allowed for store action
+
+- long term
+    - redo all some / none checks
+    - return refs?
+    - Option<&T> --> &Option<T>
+    - return refs like index
+    - iter over collections
+    - input args are &str
