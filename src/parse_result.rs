@@ -348,17 +348,6 @@ mod test {
         }
 
         #[test]
-        fn missing_positional_arguments() {
-            assert_eq!(
-                setup_parser_error(vec![
-                    "val1", "--foo1", "one", "--foo3", "one", "two", "three", "--foo4", "one",
-                    "two", "three", "four", "--foo5", "one", "two", "three", "four", "five"
-                ]),
-                ParserError::MissingPositionArguments("[[bar], [boo]]".to_string())
-            )
-        }
-
-        #[test]
         fn incorrect_positional_arguments_value_count_out_of_bounds() {
             assert_eq!(
                 setup_parser_error(vec!["val1", "val2", "val3"]),

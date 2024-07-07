@@ -18,8 +18,6 @@ const ILLEGAL_PREFIX_CHARS: [char; 3] = [' ', '\n', '\t']; // TODO fill out ille
 
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum ParserError {
-    #[error("missing positional arguments {0}")]
-    MissingPositionArguments(String),
     #[error("argument {0} expected {1} values, but found {2}")]
     IncorrectValueCount(String, NArgs, usize),
     #[error("missing values for required flag aruments {0}")]
@@ -543,9 +541,7 @@ impl ArgumentParser {
                     let mut actual_value_count = 0;
                     let mut return_val: Option<usize> = None;
                     while idx < start_idx + n {
-                        // - 1 as idx starts on first argument
                         if end_or_new_flag_arg(&idx) {
-                            // TODO if out check prior variable args exist, shift all the way down IF no flags
                             found_value_count = actual_value_count;
                             n_missing_args = n - found_value_count;
                             return_val = None;
@@ -560,7 +556,6 @@ impl ArgumentParser {
                     return_val
                 }
                 NArgs::ZeroOrOne => {
-                    // TODO attempt shift here?
                     if !end_or_new_flag_arg(&idx) {
                         idx += 1;
                     }
@@ -575,7 +570,6 @@ impl ArgumentParser {
                 NArgs::AtLeastOne => {
                     idx += 1;
                     if end_or_new_flag_arg(&idx) {
-                        // TODO attempt shift here
                         found_value_count = 0;
                         n_missing_args = 1;
                         None
@@ -591,9 +585,7 @@ impl ArgumentParser {
             if end_idx.is_none() {
                 start_idx -= n_missing_args;
                 end_idx = Some(start_idx + n_missing_args + found_value_count);
-                // push back start_idx
-                // if variable arg val was found since flag arg, attempt to pull X args
-                // push back rest of args
+
                 let start_group_idx = match (last_arg_group_idx, arg_and_raw_arg_range.is_empty()) {
                     (None, true) => 0,
                     (None, false) => return Err(ParserError::IncorrectValueCount(
@@ -602,17 +594,11 @@ impl ArgumentParser {
                         found_value_count,
                     )), // TODO raise not enough args here 
                     (Some(n), false) => n,
-                    (Some(_), true) => panic!("flag group found but no arg groups recorded"),
+                    (Some(_), true) => 0,
                 };
 
                 let mut group_shifts = Vec::new();
                 for (relative_idx, (parsed_argument, (group_start_idx, group_end_idx))) in arg_and_raw_arg_range[start_group_idx..].iter().enumerate().rev() {
-                    // debug_assert!(match parsed_argument.nargs() {
-                    //     NArgs::Exact(_) | NArgs::AtLeastOne => true, // only expect these type of nargs here
-                    //     _ => also
-                    // });
-
-                    // debug_assert!(!parsed_argument.name().is_flag_argument());
                     let n_excess_args = *group_end_idx as i32 - *group_start_idx as i32 - match parsed_argument.nargs() {
                         NArgs::Range(_, _) => todo!(),
                         NArgs::Exact(n) => *n as i32,
@@ -645,37 +631,22 @@ impl ArgumentParser {
                 }
 
                 if n_missing_args > 0 {
-                    panic!() // TODO not enough excess args to pull
+                    return Err(ParserError::IncorrectValueCount(
+                        found_argument.name().to_string(),
+                        found_argument.nargs().clone(),
+                        found_value_count,
+                    ))
                 }
 
-                // TODO downshift each group
                 for (abs_idx, shift ) in group_shifts.into_iter().rev() {
                     for (rel_idx, (arg, (start, end))) in arg_and_raw_arg_range.clone()[abs_idx..].iter().enumerate() {
                         // only take items from first item in group, shift remaining one's down
-                        // TODO abs_idx is wrong variable to write to
                         arg_and_raw_arg_range[abs_idx + rel_idx] = (arg.clone(), (if rel_idx == 0 { *start } else { *start - shift}, end - shift));
                     }
                 }
             }
 
-            // TODO ordering adjustments
-            // - "zero or one": if values left take one, else none (like at end)
-            //     - if followed by exact, keep 1
-            // - if out of values, if last one variable and has some left try to take some (if key needs it)
-            //     - if "zero or one", take value from it
-            //     - if key needs it, variable after variable will be empty
-
-            // TODO rerun this at end / everytime boundaries are iolvated
-            // let actual_value_count = idx - start_val_idx;
-            // if !found_argument.nargs().is_valid_number(actual_value_count) {
-            //     return Err(ParserError::IncorrectValueCount(
-            //         found_argument.name().to_string(),
-            //         found_argument.nargs().clone(),
-            //         actual_value_count,
-            //     ));
-            // }
-
-            arg_and_raw_arg_range.push((found_argument, (start_idx, end_idx.unwrap())))
+            arg_and_raw_arg_range.push((found_argument, (start_idx, end_idx.expect("this should be set now"))))
         }
 
         let mut seen_arguments: HashSet<Argument> = HashSet::new(); // TODO needed? or can just use arg_vals
@@ -760,8 +731,6 @@ impl ArgumentParser {
                     }
                 }?
             } else {
-                // TODO turn if else into match w/ is_flag_arg
-                // TODO process actions, depending on arg type
                 argument.with_action(match argument.action() {
                     Action::Store(_) => {
                         argument

@@ -1,15 +1,18 @@
-- pass all current tests
-- setup proper crate structure
+- all current tests passing
+- setup proper crate lib structure
     - integration tests run w/ cargo test
+     check library release requirements
+    - only make necessary methods pub
+    - keep private
+        - argument name
+    - write documentation
+    - how to release library guide
 - handle required, default, and actions
     - help isn't required, but doesn't need a default
-- properly handle posn + flag argument ordering, nargs 
-    - print_usage: all flags first w/ brackets, posn after
-    - assume currnt posn if they exist, if flag appears then parse that instead
-    - (any/one+) --> exact; pull from prev var posn else insufficient args  
 - count -vvv action support?
 - test error cases
     - different actions w/ default, required, nargs, flag vs posn arg,
+- panics to errors 
 
 - impl parser default
     - error out if can't String --> T support, or just warning
@@ -34,13 +37,6 @@
     - mutually exclusive group
 - fromfile_prefix_chars
     - check for conflicts with PrefixChars
-- integration tests
-- check library release requirements
-- only make necessary methods pub
-- keep private
-    - argument name
-- write documentation
-- how to release library guide
 
 - will not support / deliberatly not supported
     - posn arguments don't support required

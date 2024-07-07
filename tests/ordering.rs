@@ -270,7 +270,7 @@ mod ordering {
                 (NArgs::ZeroOrOne, false),
                 (NArgs::Exact(1), false),
             ],
-            vec!["a", "b", "c"],
+            vec!["a", "b"],
         );
         assert_eq!(namespace.get::<String>("0").unwrap(), vec!["a".to_string()]);
         assert!(namespace.get::<String>("1").unwrap().is_empty());
@@ -336,28 +336,27 @@ mod ordering {
         assert_eq!(namespace.get::<String>("2").unwrap(), vec!["e".to_string()]);
     }
 
-    // #[test]
-    // fn exact_posn_then_var_posn_then_var_posn() {
-    //     let namespace = init_test_arg_parser(
-    //         vec![
-    //             (NArgs::AnyNumber, false),
-    //             (NArgs::Exact(1), false),
-    //             (NArgs::Exact(1), false),
-    //         ],
-    //         vec!["a", "b", "c", "d", "e"],
-    //     );
-    //     assert_eq!(namespace.get::<String>("0").unwrap(), vec!["a".to_string()]);
-    //     assert_eq!(
-    //         namespace.get::<String>("1").unwrap(),
-    //         vec![
-    //             "b".to_string(),
-    //             "c".to_string(),
-    //             "d".to_string(),
-    //             "e".to_string()
-    //         ]
-    //     );
-    //     assert!(namespace.get::<String>("2").unwrap().is_empty());
-    // }
+    #[test]
+    fn exact_posn_then_var_posn_then_var_posn() {
+        let namespace = init_test_arg_parser(
+            vec![
+                (NArgs::Exact(2), false),
+                (NArgs::AnyNumber, false),
+                (NArgs::AnyNumber, false),
+            ],
+            vec!["a", "b", "c", "d", "e"],
+        );
+        assert_eq!(namespace.get::<String>("0").unwrap(), vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(
+            namespace.get::<String>("1").unwrap(),
+            vec![
+                "c".to_string(),
+                "d".to_string(),
+                "e".to_string()
+            ]
+        );
+        assert!(namespace.get::<String>("2").unwrap().is_empty());
+    }
 
     #[test]
     fn at_least_one_posn_then_exact_posn() {
@@ -416,7 +415,7 @@ mod ordering {
     #[test]
     fn exact_posn_zero_or_one_posn_no_leftover() {
         let namespace = init_test_arg_parser(
-            vec![(NArgs::Exact(4), false), (NArgs::ZeroOrOne, false)],
+            vec![(NArgs::Exact(5), false), (NArgs::ZeroOrOne, false)],
             vec!["a", "b", "c", "d", "e"],
         );
         assert_eq!(
@@ -487,7 +486,7 @@ mod ordering {
     }
 
     #[test]
-    fn exact_posn_zero_or_one_posn_exact_posn() {
+    fn exact_posn_then_zero_or_one_posn_then_one_or_more_posn() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::Exact(2), false),
@@ -500,10 +499,13 @@ mod ordering {
             namespace.get::<String>("0").unwrap(),
             vec!["a".to_string(), "b".to_string()]
         );
-        assert!(namespace.get::<String>("1").unwrap().is_empty());
+        assert_eq!(
+            namespace.get::<String>("1").unwrap(),
+            vec!["c".to_string()]
+        );
         assert_eq!(
             namespace.get::<String>("2").unwrap(),
-            vec!["c".to_string(), "d".to_string(), "e".to_string()]
+            vec![ "d".to_string(), "e".to_string()]
         );
     }
 
@@ -571,7 +573,7 @@ mod ordering {
     fn zero_or_one_flag_as_one_exact_posn() {
         let namespace = init_test_arg_parser(
             vec![(NArgs::ZeroOrOne, true), (NArgs::Exact(2), false)],
-            vec!["--1", "a", "b", "c"],
+            vec!["--0", "a", "b", "c"],
         );
         assert_eq!(namespace.get::<String>("0").unwrap(), vec!["a".to_string()]);
         assert_eq!(
@@ -584,8 +586,8 @@ mod ordering {
     fn zero_or_one_flag_as_zero_exact_posn() {
         // TODO this errors out
         let namespace = init_test_arg_parser(
-            vec![(NArgs::ZeroOrOne, true), (NArgs::Exact(2), false)],
-            vec!["--1", "a", "b", "c"],
+            vec![(NArgs::ZeroOrOne, true), (NArgs::Exact(3), false)],
+            vec!["--0", "a", "b", "c"],
         );
         assert!(namespace.get::<String>("0").unwrap().is_empty());
         assert_eq!(
