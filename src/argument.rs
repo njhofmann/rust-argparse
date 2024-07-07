@@ -7,6 +7,18 @@ use std::hash::Hasher;
 use std::{collections::HashSet, fmt::Display};
 use thiserror::Error;
 
+const HELP_STRING: &str = "help";
+const APPEND_CONST_STRING: &str = "append_const";
+const STORE_CONST_STRING: &str = "store_const";
+const STORE_STRING: &str = "store";
+const VERSION_STRING: &str = "version";
+const EXTEND_STRING: &str = "extend";
+const APPEND_STRING: &str = "append";
+const STORE_TRUE_STRING: &str = "store_true";
+const STORE_FALSE_STRING: &str = "store_false";
+const COUNT_STRING: &str = "count";
+
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
     Store(Vec<String>),
@@ -28,34 +40,34 @@ impl Action {
         dest: Option<&str>,
     ) -> Result<Action, ArgumentError> {
         match (action, &constant) {
-            ("store_const", None) | ("append_const", None) => todo!(), // TODO missing const
-            ("store_const", Some(_)) | ("append_const", Some(_)) | (_, None) => Ok(()),
+            (STORE_CONST_STRING, None) | (APPEND_CONST_STRING, None) => todo!(), // TODO missing const
+            (STORE_CONST_STRING, Some(_)) | (APPEND_CONST_STRING, Some(_)) | (_, None) => Ok(()),
             (_, Some(_)) => todo!(), // TODO wrong action
         }?;
 
         match (action, dest) {
-            ("append_const", None) => todo!(), // TODO missing dest
-            ("append_const", Some(_)) | (_, None) => Ok(()),
+            (APPEND_CONST_STRING, None) => todo!(), // TODO missing dest
+            (APPEND_CONST_STRING, Some(_)) | (_, None) => Ok(()),
             (_, Some(_)) => todo!(), // TODO wrong action
         }?;
 
         match (action, version) {
-            ("version", None) => todo!(), // TODO missing version
+            (VERSION_STRING, None) => todo!(), // TODO missing version
             (_, Some(_)) => todo!(),      // TODO wrong action
             _ => Ok(()),                  // TODO check if empty
         }?;
 
         let action = match action {
-            "store" => Ok(Action::Store(vec![])),
-            "store_const" => Ok(Action::StoreConst(constant.unwrap())),
-            "store_true" => Ok(Action::StoreConst(vec!["true".to_string()])),
-            "store_false" => Ok(Action::StoreConst(vec!["false".to_string()])),
-            "append" => Ok(Action::Append(vec![])),
-            "append_const" => Ok(Action::AppendConst(constant.unwrap())),
-            "count" => Ok(Action::Count(0)),
-            "help" => Ok(Action::Help),
-            "version" => Ok(Action::Version(version.unwrap().to_string())),
-            "extend" => Ok(Action::Extend(vec![])),
+            STORE_STRING => Ok(Action::Store(vec![])),
+            STORE_CONST_STRING => Ok(Action::StoreConst(constant.unwrap())),
+            STORE_TRUE_STRING => Ok(Action::StoreConst(vec!["true".to_string()])),
+            STORE_FALSE_STRING => Ok(Action::StoreConst(vec!["false".to_string()])),
+            APPEND_STRING => Ok(Action::Append(vec![])),
+            APPEND_CONST_STRING => Ok(Action::AppendConst(constant.unwrap())),
+            COUNT_STRING => Ok(Action::Count(0)),
+            HELP_STRING => Ok(Action::Help),
+            VERSION_STRING => Ok(Action::Version(version.unwrap().to_string())),
+            EXTEND_STRING => Ok(Action::Extend(vec![])),
             x => Err(ArgumentError::InvalidAction(x.to_string())),
         }?;
 
@@ -71,24 +83,24 @@ impl Action {
 impl Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let result = match self {
-            Action::Store(_) => "store",
+            Action::Store(_) => STORE_STRING,
             Action::StoreConst(c) => {
                 if c.len() == 1 {
                     match c.first().unwrap().as_str() {
-                        "true" => "store_true",
-                        "false" => "store_false",
-                        _ => "store_const",
+                        "true" => STORE_TRUE_STRING,
+                        "false" =>STORE_FALSE_STRING,
+                        _ => STORE_CONST_STRING,
                     }
                 } else {
-                    "store_const"
+                    STORE_CONST_STRING
                 }
             }
-            Action::Append(_) => "append",
-            Action::AppendConst(_) => "append_const",
-            Action::Count(_) => "count",
-            Action::Help => "help",
-            Action::Version(_) => "version",
-            Action::Extend(_) => "extend",
+            Action::Append(_) => APPEND_STRING,
+            Action::AppendConst(_) => APPEND_CONST_STRING,
+            Action::Count(_) => COUNT_STRING,
+            Action::Help => HELP_STRING,
+            Action::Version(_) => VERSION_STRING,
+            Action::Extend(_) => EXTEND_STRING,
         };
         write!(f, "{}", result)
     }
@@ -96,7 +108,6 @@ impl Display for Action {
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]
 pub enum NArgs {
-    Range(usize, usize), // a ,= x <= b
     Exact(usize),
     ZeroOrOne,  // ?
     AnyNumber,  // *
@@ -110,7 +121,6 @@ impl NArgs {
             NArgs::ZeroOrOne => x < 2,
             NArgs::AnyNumber => true,
             NArgs::AtLeastOne => x > 0,
-            NArgs::Range(a, b) => a <= &x && &x <= b,
         }
     }
 
@@ -118,7 +128,6 @@ impl NArgs {
         match self {
             NArgs::Exact(x) if x != &0 => false,
             NArgs::AtLeastOne => false,
-            NArgs::Range(a, b) => a == &(0 as usize) || b == &(0 as usize),
             _ => true,
         }
     }
@@ -142,7 +151,6 @@ impl Display for NArgs {
                 NArgs::ZeroOrOne => "zero or one ('?')".to_string(),
                 NArgs::AnyNumber => "any number ('*')".to_string(),
                 NArgs::AtLeastOne => "at least one ('+')".to_string(),
-                NArgs::Range(a, b) => format!("{} to {} (inclusive)", a, b),
             }
         )
     }
@@ -272,17 +280,8 @@ impl Argument {
             Some(x) => Action::new(x, name.is_flag_argument(), constant, version, dest),
         }?;
 
-        if name.is_flag_argument() {
-            // keep these separate as remaining checks are only for positional arguments
-            if let Some(NArgs::Range(a, b)) = nargs {
-                if a >= b {
-                    return Err(ArgumentError::InvalidRangeSize(a, b));
-                }
-            }
-        } else if required.is_some() {
+ if !name.is_flag_argument() && required.is_some() {
             return Err(ArgumentError::RequiredMarkedForPositionalArgument);
-        } else if let Some(NArgs::Range(_, _)) = nargs {
-            return Err(ArgumentError::RangeSizeGivenToPositionalArgument);
         }
 
         let required = match (&action, required) {
@@ -291,7 +290,6 @@ impl Argument {
             (_, Some(_)) => Err(ArgumentError::RequiredGivenToUnsupportedAction),
         }?;
 
-        // TODO does this error out on posn args
         match (&action, &default) {
             (Action::Store(_), _) | (Action::Append(_), _) => Ok(()),
             (action, Some(_)) => Err(ArgumentError::DefaultGivenForUnsupportedAction(

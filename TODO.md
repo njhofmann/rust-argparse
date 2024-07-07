@@ -1,4 +1,7 @@
-- all current tests passing
+- - panics to errors
+- test error cases
+    - different actions w/ default, required, nargs, flag vs posn arg,
+    - handle required, default, and actions
 - setup proper crate lib structure
     - integration tests run w/ cargo test
      check library release requirements
@@ -7,12 +10,7 @@
         - argument name
     - write documentation
     - how to release library guide
-- handle required, default, and actions
-    - help isn't required, but doesn't need a default
 - count -vvv action support?
-- test error cases
-    - different actions w/ default, required, nargs, flag vs posn arg,
-- panics to errors 
 
 - impl parser default
     - error out if can't String --> T support, or just warning

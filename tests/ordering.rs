@@ -584,7 +584,6 @@ mod ordering {
 
     #[test]
     fn zero_or_one_flag_as_zero_exact_posn() {
-        // TODO this errors out
         let namespace = init_test_arg_parser(
             vec![(NArgs::ZeroOrOne, true), (NArgs::Exact(3), false)],
             vec!["--0", "a", "b", "c"],

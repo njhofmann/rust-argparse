@@ -28,9 +28,6 @@ pub enum ArgumentError {
     NonRequiredArgumentNotGivenDefaultValue(String),
     #[error("{0}")]
     InvalidChoice(InvalidChoice),
-    #[error("given a positional argument that accepts a set range of values")]
-    // TODO should this be supported if single?
-    RangeSizeGivenToPositionalArgument,
     #[error("start of NArgs::Range {0} is >= than end {1}")]
     InvalidRangeSize(usize, usize),
     #[error("{0} is not a supported Action")]

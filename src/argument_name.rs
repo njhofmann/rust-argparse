@@ -11,7 +11,7 @@ use crate::FLAG_ARG_LEN;
 
 #[derive(Clone, Debug, Eq)]
 pub enum ArgumentName {
-    Positional(String), // TODO are multiples even allowed?
+    Positional(String),
     Flag {
         full: Vec<String>,
         abbrev: Vec<String>,
@@ -35,7 +35,7 @@ impl ArgumentName {
                 PrefixCharOutcomes::ABBREV => Ok(ArgumentName::Flag {
                     full: vec![],
                     abbrev: vec![raw_arg_name[FLAG_ARG_ABBREV_LEN..].to_string()],
-                }), // TODO raise error here?
+                }),
                 PrefixCharOutcomes::NONE => Ok(ArgumentName::Positional(raw_arg_name.to_string())),
             }
         } else {
@@ -110,7 +110,7 @@ impl ArgumentName {
             }
             (ArgumentName::Positional(x), ArgumentName::Flag { full, abbrev }) => {
                 other.overlap(self)
-            } // TODO cover abbrev as well
+            }
             (ArgumentName::Flag { full, abbrev }, ArgumentName::Positional(x)) => {
                 if full.contains(x) || abbrev.contains(x) {
                     vec![x.clone()]

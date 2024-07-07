@@ -2,11 +2,10 @@ use std::{
     collections::{HashMap, HashSet},
     env,
     fmt::Display,
-    hash::Hash,
 };
 
 use crate::{
-    argument::{self, Action, Argument, NArgs},
+    argument::{Action, Argument, NArgs},
     argument_error::ArgumentError,
     argument_name::ArgumentName,
     parse_result::Namespace,
@@ -26,10 +25,6 @@ pub enum ParserError {
     InvalidFlagArgument(String),
     #[error("duplicate flag argument {0} found")]
     DuplicateFlagArgument(String),
-    #[error(
-        "expected flag argument starting with '-' or '--' but found raw value \"{0}\" instead"
-    )]
-    ExpectedFlagArgument(String), // TODO is this needed
     #[error("found multiple arguments {1} for abbreviated argument key \"{0}\"")]
     ConflictingArguments(String, String),
     #[error("{0}")]
@@ -440,7 +435,6 @@ impl ArgumentParser {
         let mut indices = vec![0];
         for narg in all_nargs.into_iter() {
             match narg {
-                NArgs::Range(_, _) => todo!(),
                 NArgs::Exact(x) => {
                     let new_index = indices.last().unwrap() + x;
                     if new_index <= args.len() {
@@ -472,21 +466,20 @@ impl ArgumentParser {
         let mut processed_arguments: HashSet<Argument> = HashSet::new();
         let mut idx = 0;
         let mut cur_posn_argument_idx: Option<usize> = self.positional_args.first().map(|_| 0);
-        let mut processed_posn_args: Vec<Argument> = Vec::new();
+        let mut processed_posn_args: Vec<Argument> = Vec::new(); 
         let mut arg_and_raw_arg_range: Vec<(Argument, (usize, usize))> = Vec::new();
-        let mut last_arg_group_idx: Option<usize> = None;  // tracks indices in arg_and_raw_arg_range
+        // TODO This doesn't need to be option
+        let mut last_arg_group_idx: Option<usize> = None;  // tracks indices in arg_and_raw_arg_range 
         // contine to parse so long as posn arguments are left or raw args haven't been looked at (may have flags)
         while idx < raw_args.len()
             || (cur_posn_argument_idx.is_some_and(|idx| idx < self.positional_args.len()))
         {           
             let cur_raw_arg = if idx >= raw_args.len()  {
-                // TODO fix this, cover case of not enough argsfor remaining 
-                // error only 
                 None
             } else {
                 Some(raw_args[idx].as_str())
             };
-            //  
+            
             let found_argument = if cur_raw_arg.is_some() && self.prefix_chars.parse_string(cur_raw_arg.unwrap()).is_flag() {
                 let cur_raw_arg = match self.prefix_chars.parse_string(&cur_raw_arg.unwrap()) {
                     PrefixCharOutcomes::LONG => Ok(cur_raw_arg.unwrap()[FLAG_ARG_LEN..].to_string()),
@@ -536,7 +529,6 @@ impl ArgumentParser {
             let mut n_missing_args = 0;
 
             let mut end_idx: Option<usize> = match found_argument.nargs() {
-                NArgs::Range(_, _) => panic!(), // TODO support this later
                 NArgs::Exact(n) => {
                     let mut actual_value_count = 0;
                     let mut return_val: Option<usize> = None;
@@ -600,7 +592,6 @@ impl ArgumentParser {
                 let mut group_shifts = Vec::new();
                 for (relative_idx, (parsed_argument, (group_start_idx, group_end_idx))) in arg_and_raw_arg_range[start_group_idx..].iter().enumerate().rev() {
                     let n_excess_args = *group_end_idx as i32 - *group_start_idx as i32 - match parsed_argument.nargs() {
-                        NArgs::Range(_, _) => todo!(),
                         NArgs::Exact(n) => *n as i32,
                         NArgs::ZeroOrOne | NArgs::AnyNumber => 0,
                         NArgs::AtLeastOne => 1,
@@ -907,7 +898,7 @@ mod test {
     }
 
     use crate::{
-        argument::{self, Argument, NArgs},
+        argument::{Argument, NArgs},
         argument_error::ArgumentError,
         argument_name::ArgumentName,
         argument_parser::PrefixChars,

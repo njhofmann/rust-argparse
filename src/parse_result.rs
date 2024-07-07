@@ -374,7 +374,6 @@ mod test {
                     "val1", "val2", "val3", "val4", "--foo4", "one", "two", "three", "four",
                     "--foo5", "one", "two", "three", "four", "five",
                 ]),
-                // TODO why do these shift when running
                 ParserError::MissingRequiredFlagArguments("[[--foo1], [--foo3]]".to_string())
             )
         }
