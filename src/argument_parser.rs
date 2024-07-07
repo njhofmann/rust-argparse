@@ -1,7 +1,8 @@
 use std::{
     collections::{HashMap, HashSet},
     env,
-    fmt::Display, hash::Hash,
+    fmt::Display,
+    hash::Hash,
 };
 
 use crate::{
@@ -30,11 +31,13 @@ pub enum ParserError {
     #[error(
         "expected flag argument starting with '-' or '--' but found raw value \"{0}\" instead"
     )]
-    ExpectedFlagArgument(String),
+    ExpectedFlagArgument(String), // TODO is this needed
     #[error("found multiple arguments {1} for abbreviated argument key \"{0}\"")]
     ConflictingArguments(String, String),
     #[error("{0}")]
     InvalidChoice(InvalidChoice),
+    #[error("no arguments were found to process remaining raw arguments {0}")]
+    UnprocessedRawArguments(String)
 }
 
 #[derive(Debug, PartialEq)]
@@ -332,12 +335,6 @@ impl ArgumentParser {
         let new_arg_location = if argument.name().is_flag_argument() {
             self.flag_args.push(argument.clone());
             Ok((self.flag_args.len() - 1, true))
-        } else if !self.positional_args.is_empty()
-            && self.positional_args.last().unwrap().nargs().is_variable()
-            && argument.nargs().is_variable()
-        {
-            debug_assert!(self.positional_args.len() == 1);
-            Err(ArgumentError::TwoVariableSizedPositionalArguments)
         } else {
             self.positional_args.push(argument.clone());
             Ok((self.positional_args.len() - 1, false))
@@ -461,44 +458,6 @@ impl ArgumentParser {
         Ok(indices)
     }
 
-    fn parse_positional_arguments(
-        &self,
-        mut argument_values: HashSet<Argument>,
-        raw_args: &Vec<String>,
-        mut arg_idx: usize,
-    ) -> Result<(HashSet<Argument>, usize), ParserError> {
-        let end_of_pos_args = |arg_idx: usize| {
-            arg_idx >= raw_args.len()
-                || self.prefix_chars.parse_string(&raw_args[arg_idx]).is_flag()
-        };
-
-        let mut end_idx = 0;
-        while !end_of_pos_args(end_idx) {
-            end_idx += 1;
-        }
-
-        let raw_positional_args = raw_args[..end_idx].to_vec();
-        let argument_nargs = self.positional_args.iter().map(|x| x.nargs()).collect();
-        let argument_value_indices =
-            self.divide_raw_positional_args(argument_nargs, &raw_positional_args)?;
-
-        for (i, argument) in self.positional_args.iter().enumerate() {
-            let raw_args = raw_positional_args
-                [argument_value_indices[i]..argument_value_indices[i + 1]]
-                .to_vec();
-            argument
-                .arg_value_in_choices(&raw_args)
-                .map_err(ParserError::InvalidChoice)?;
-            let new_argument = argument.with_action(match argument.action() {
-                Action::Store(_) => Action::Store(raw_args),
-                _ => panic!(),
-            });
-            argument_values.insert(new_argument);
-        }
-
-        Ok((argument_values, end_idx))
-    }
-
     pub fn arguments(&self) -> Vec<&Argument> {
         let mut arguments = Vec::new();
         for argument in self.positional_args.iter() {
@@ -510,138 +469,326 @@ impl ArgumentParser {
         arguments
     }
 
-    fn parse_flag_arguments(
-        &self,
-        mut argument_values: HashSet<Argument>,
-        raw_args: Vec<String>,
-    ) -> Result<HashSet<Argument>, ParserError> {
-        let mut arg_idx = 0;
-        let mut seen_arguments: HashSet<Argument> = HashSet::new();
-        while arg_idx < raw_args.len() {
-            let cur_raw_arg = &raw_args[arg_idx];
-            let cur_raw_arg = match self.prefix_chars.parse_string(&cur_raw_arg) {
-                PrefixCharOutcomes::LONG => Ok(cur_raw_arg[FLAG_ARG_LEN..].to_string()),
-                PrefixCharOutcomes::ABBREV => Ok(cur_raw_arg[FLAG_ARG_ABBREV_LEN..].to_string()),
-                PrefixCharOutcomes::NONE => {
-                    Err(ParserError::ExpectedFlagArgument(cur_raw_arg.clone()))
+    pub fn parse_args(&self, raw_args: Option<Vec<String>>) -> Result<Namespace, ParserError> {
+        let raw_args = raw_args.unwrap_or(env::args().collect());
+        let mut processed_arguments: HashSet<Argument> = HashSet::new();
+        let mut idx = 0;
+        let mut cur_posn_argument_idx: Option<usize> = self.positional_args.first().map(|_| 0);
+        let mut processed_posn_args: Vec<Argument> = Vec::new();
+        let mut arg_and_raw_arg_range: Vec<(Argument, (usize, usize))> = Vec::new();
+        let mut last_arg_group_idx: Option<usize> = None;  // tracks indices in arg_and_raw_arg_range
+        // contine to parse so long as posn arguments are left or raw args haven't been looked at (may have flags)
+        while idx < raw_args.len()
+            || (cur_posn_argument_idx.is_some_and(|idx| idx < self.positional_args.len()))
+        {           
+            let cur_raw_arg = if idx >= raw_args.len()  {
+                // TODO fix this, cover case of not enough argsfor remaining 
+                // error only 
+                None
+            } else {
+                Some(raw_args[idx].as_str())
+            };
+            //  
+            let found_argument = if cur_raw_arg.is_some() && self.prefix_chars.parse_string(cur_raw_arg.unwrap()).is_flag() {
+                let cur_raw_arg = match self.prefix_chars.parse_string(&cur_raw_arg.unwrap()) {
+                    PrefixCharOutcomes::LONG => Ok(cur_raw_arg.unwrap()[FLAG_ARG_LEN..].to_string()),
+                    PrefixCharOutcomes::ABBREV => {
+                        Ok(cur_raw_arg.unwrap()[FLAG_ARG_ABBREV_LEN..].to_string())
+                    }
+                    _ => panic!("found non-flag argument")
+                }?;
+
+                let mut found_arg = self.get_flag_argument(&cur_raw_arg)?;
+                if processed_arguments.contains(&found_arg) {
+                    found_arg = processed_arguments.get(&found_arg).unwrap().clone();
                 }
-            }?;
-
-            let mut found_arg = self.get_flag_argument(&cur_raw_arg)?;
-            if argument_values.contains(&found_arg) {
-                found_arg = argument_values.get(&found_arg).unwrap().clone();
-            }
-
-            arg_idx += 1;
-            let start_val_idx = arg_idx;
-            loop {
-                if arg_idx >= raw_args.len()
-                || self.prefix_chars.parse_string(&raw_args[arg_idx]).is_flag()
+                
+                last_arg_group_idx = Some(last_arg_group_idx.map_or(0, |x| x + 1));
+                idx += 1; // move past flag
+                Ok(found_arg.clone())
+            } else if cur_posn_argument_idx.is_none() {
+                Err(ParserError::UnprocessedRawArguments(string_vec_to_string(&raw_args[idx..].to_vec(), false)))
+            } else {
+                if last_arg_group_idx.is_none() { // TODO this is never 
+                    last_arg_group_idx = Some(last_arg_group_idx.map_or(0, |x| x + 1)) 
+                }
+                let found_argument = self.positional_args[cur_posn_argument_idx.unwrap()].clone();
+                cur_posn_argument_idx = if cur_posn_argument_idx
+                    .is_some_and(|x| (x + 1) >= self.positional_args.len())
                 {
-                    break;
-                }
-                arg_idx += 1;
-            }
+                    None
+                } else {
+                    Some(cur_posn_argument_idx.unwrap() + 1)
+                };
 
-            let actual_value_count = arg_idx - start_val_idx;
-            if !found_arg.nargs().is_valid_number(actual_value_count) {
-                return Err(ParserError::IncorrectValueCount(
-                    found_arg.name().to_string(),
-                    found_arg.nargs().clone(),
-                    actual_value_count,
-                ));
-            }
-            let mut arg_val_vec = raw_args[start_val_idx..arg_idx].to_vec();
-            let new_argument = match found_arg.action() {
-                Action::Help => {
-                    println!("{}", self.format_help());
-                    std::process::exit(0)
-                }
-                Action::Version(v) => {
-                    println!("{}", v);
-                    std::process::exit(0)
-                }
-                Action::Store(_) => {
-                    if seen_arguments.contains(&found_arg) {
-                        Err(ParserError::DuplicateFlagArgument(
-                            found_arg.name().to_string(),
-                        ))
-                    } else {
-                        seen_arguments.contains(&found_arg); // mark as found
-                        found_arg
-                            .arg_value_in_choices(&arg_val_vec)
-                            .map_err(ParserError::InvalidChoice)?;
-                        Ok(found_arg.with_action(Action::Store(arg_val_vec)))
-                    }
-                }
-                Action::StoreConst(c) => {
-                    if seen_arguments.contains(&found_arg) {
-                        Err(ParserError::DuplicateFlagArgument(
-                            found_arg.name().to_string(),
-                        ))
-                    } else {
-                        Ok(found_arg.with_action(Action::Store(c.clone())))
-                    }
-                }
-                Action::Append(v) => {
-                    found_arg
-                        .arg_value_in_choices(&arg_val_vec)
-                        .map_err(ParserError::InvalidChoice)?;
-                    let mut new_v = v.clone();
-                    if let Some(default) = found_arg.default() {
-                        new_v.append(&mut default.clone())
-                    }
-                    new_v.append(&mut arg_val_vec);
-                    Ok(found_arg.with_action(Action::Append(new_v)))
-                }
-                Action::AppendConst(c) => {
-                    let vec_key = found_arg
-                        .dest()
-                        .as_ref()
-                        .expect("this should have been checked before");
-                    let mut storing_argument = self.get_flag_argument(&vec_key)?;
-                    if argument_values.contains(&storing_argument) {
-                        storing_argument = argument_values.get(&storing_argument).unwrap().clone();
-                    }
-                    let new_action = match storing_argument.action() {
-                        Action::Extend(v) => {
-                            let mut new_v = v.clone();
-                            new_v.append(&mut c.clone());
-                            Action::Extend(new_v)
-                        }
-                        _ => panic!(),
-                    };
-                    Ok(storing_argument.with_action(new_action))
-                }
-                Action::Count(x) => Ok(found_arg.with_action(Action::Count(x + 1))),
-                Action::Extend(v) => {
-                    found_arg
-                        .arg_value_in_choices(&arg_val_vec)
-                        .map_err(ParserError::InvalidChoice)?;
-                    let mut new_v = v.clone();
-                    new_v.append(&mut arg_val_vec);
-                    Ok(found_arg.with_action(Action::Extend(new_v)))
-                }
+                processed_posn_args.push(found_argument.clone());
+                Ok(found_argument)
             }?;
 
-            // flag_args.remove(&new_argument); // TODO does this work, remove og and new one
-            seen_arguments.insert(new_argument.clone());
-            if !argument_values.insert(new_argument.clone()) {
-                argument_values.replace(new_argument.clone());
+            let end_or_new_flag_arg = |idx: &usize| {
+                idx >= &raw_args.len()
+                    || self
+                        .prefix_chars
+                        .parse_string(&raw_args[idx.clone()])
+                        .is_flag()
+            };
+
+            let mut start_idx = idx;
+            let mut found_value_count= 0;
+            let mut n_missing_args = 0;
+
+            let mut end_idx: Option<usize> = match found_argument.nargs() {
+                NArgs::Range(_, _) => panic!(), // TODO support this later
+                NArgs::Exact(n) => {
+                    let mut actual_value_count = 0;
+                    let mut return_val: Option<usize> = None;
+                    while idx < start_idx + n {
+                        // - 1 as idx starts on first argument
+                        if end_or_new_flag_arg(&idx) {
+                            // TODO if out check prior variable args exist, shift all the way down IF no flags
+                            found_value_count = actual_value_count;
+                            n_missing_args = n - found_value_count;
+                            return_val = None;
+                            break;
+                        } else {
+                            actual_value_count += 1;
+                            idx += 1;
+                            return_val = Some(idx);
+                        }
+                    
+                    }
+                    return_val
+                }
+                NArgs::ZeroOrOne => {
+                    // TODO attempt shift here?
+                    if !end_or_new_flag_arg(&idx) {
+                        idx += 1;
+                    }
+                    Some(idx)
+                }
+                NArgs::AnyNumber => {
+                    while !end_or_new_flag_arg(&idx) {
+                        idx += 1
+                    }
+                    Some(idx)
+                }
+                NArgs::AtLeastOne => {
+                    idx += 1;
+                    if end_or_new_flag_arg(&idx) {
+                        // TODO attempt shift here
+                        found_value_count = 0;
+                        n_missing_args = 1;
+                        None
+                    } else {
+                        while !end_or_new_flag_arg(&idx) {
+                            idx += 1
+                        }
+                        Some(idx)
+                    }
+                }
+            };
+            
+            if end_idx.is_none() {
+                start_idx -= n_missing_args;
+                end_idx = Some(start_idx + n_missing_args + found_value_count);
+                // push back start_idx
+                // if variable arg val was found since flag arg, attempt to pull X args
+                // push back rest of args
+                let start_group_idx = match (last_arg_group_idx, arg_and_raw_arg_range.is_empty()) {
+                    (None, true) => 0,
+                    (None, false) => return Err(ParserError::IncorrectValueCount(
+                        found_argument.name().to_string(),
+                        found_argument.nargs().clone(),
+                        found_value_count,
+                    )), // TODO raise not enough args here 
+                    (Some(n), false) => n,
+                    (Some(_), true) => panic!("flag group found but no arg groups recorded"),
+                };
+
+                let mut group_shifts = Vec::new();
+                for (relative_idx, (parsed_argument, (group_start_idx, group_end_idx))) in arg_and_raw_arg_range[start_group_idx..].iter().enumerate().rev() {
+                    // debug_assert!(match parsed_argument.nargs() {
+                    //     NArgs::Exact(_) | NArgs::AtLeastOne => true, // only expect these type of nargs here
+                    //     _ => also
+                    // });
+
+                    // debug_assert!(!parsed_argument.name().is_flag_argument());
+                    let n_excess_args = *group_end_idx as i32 - *group_start_idx as i32 - match parsed_argument.nargs() {
+                        NArgs::Range(_, _) => todo!(),
+                        NArgs::Exact(n) => *n as i32,
+                        NArgs::ZeroOrOne | NArgs::AnyNumber => 0,
+                        NArgs::AtLeastOne => 1,
+                    };
+
+                    debug_assert!(n_excess_args >= 0);
+
+                    let n_args_to_shift = if n_missing_args == n_excess_args as usize {
+                        n_missing_args = 0;
+                        n_excess_args as usize
+                    } else if n_missing_args < n_excess_args as usize {
+                        let temp = n_missing_args;
+                        n_missing_args = 0;
+                        temp
+                    } else {
+                        n_missing_args -= n_excess_args as usize;
+                        n_excess_args as usize
+                    };
+
+                    // track n excess args each process parsed arg can contribute
+                    if n_args_to_shift > 0 {
+                        group_shifts.push((start_group_idx + relative_idx, n_args_to_shift));
+                    }
+
+                    if n_missing_args == 0 {
+                        break;
+                    }
+                }
+
+                if n_missing_args > 0 {
+                    panic!() // TODO not enough excess args to pull
+                }
+
+                // TODO downshift each group
+                for (abs_idx, shift ) in group_shifts.into_iter().rev() {
+                    for (rel_idx, (arg, (start, end))) in arg_and_raw_arg_range.clone()[abs_idx..].iter().enumerate() {
+                        // only take items from first item in group, shift remaining one's down
+                        // TODO abs_idx is wrong variable to write to
+                        arg_and_raw_arg_range[abs_idx + rel_idx] = (arg.clone(), (if rel_idx == 0 { *start } else { *start - shift}, end - shift));
+                    }
+                }
             }
-            // argument_values.replace(new_argument); // update existing arg value for actions that take multiple args
-            // argument_values.insert(value)
+
+            // TODO ordering adjustments
+            // - "zero or one": if values left take one, else none (like at end)
+            //     - if followed by exact, keep 1
+            // - if out of values, if last one variable and has some left try to take some (if key needs it)
+            //     - if "zero or one", take value from it
+            //     - if key needs it, variable after variable will be empty
+
+            // TODO rerun this at end / everytime boundaries are iolvated
+            // let actual_value_count = idx - start_val_idx;
+            // if !found_argument.nargs().is_valid_number(actual_value_count) {
+            //     return Err(ParserError::IncorrectValueCount(
+            //         found_argument.name().to_string(),
+            //         found_argument.nargs().clone(),
+            //         actual_value_count,
+            //     ));
+            // }
+
+            arg_and_raw_arg_range.push((found_argument, (start_idx, end_idx.unwrap())))
         }
 
-        let mut remaining_required_flag_args = Vec::new();
+        let mut seen_arguments: HashSet<Argument> = HashSet::new(); // TODO needed? or can just use arg_vals
+        for (argument, (start_idx, end_idx)) in arg_and_raw_arg_range {
+            let mut arg_val_vec = raw_args[start_idx..end_idx].to_vec();
+            let new_argument = if argument.name().is_flag_argument() {
+                let argument = if processed_arguments.contains(&argument) {
+                                processed_arguments.get(&argument).unwrap().clone()
+                            } else {
+                                argument
+                            };
+                match argument.action() {
+                    Action::Help => {
+                        println!("{}", self.format_help());
+                        std::process::exit(0)
+                    }
+                    Action::Version(v) => {
+                        println!("{}", v);
+                        std::process::exit(0)
+                    }
+                    Action::Store(_) => {
+                        if seen_arguments.contains(&argument) {
+                            Err(ParserError::DuplicateFlagArgument(
+                                argument.name().to_string(),
+                            ))
+                        } else {
+                            seen_arguments.contains(&argument); // mark as found
+                            argument
+                                .arg_value_in_choices(&arg_val_vec)
+                                .map_err(ParserError::InvalidChoice)?;
+                            Ok(argument.with_action(Action::Store(arg_val_vec)))
+                        }
+                    }
+                    Action::StoreConst(c) => {
+                        if seen_arguments.contains(&argument) {
+                            Err(ParserError::DuplicateFlagArgument(
+                                argument.name().to_string(),
+                            ))
+                        } else {
+                            Ok(argument.with_action(Action::Store(c.clone())))
+                        }
+                    }
+                    Action::Append(v) => {
+                        argument
+                            .arg_value_in_choices(&arg_val_vec)
+                            .map_err(ParserError::InvalidChoice)?;
+                        let mut new_v = v.clone();
+                        if let Some(default) = argument.default() {
+                            new_v.append(&mut default.clone())
+                        }
+                        new_v.append(&mut arg_val_vec);
+                        Ok(argument.with_action(Action::Append(new_v)))
+                    }
+                    Action::AppendConst(c) => {
+                        let vec_key = argument
+                            .dest()
+                            .as_ref()
+                            .expect("this should have been checked before");
+                        let mut storing_argument = self.get_flag_argument(&vec_key)?;
+                        if processed_arguments.contains(&storing_argument) {
+                            storing_argument =
+                                processed_arguments.get(&storing_argument).unwrap().clone();
+                        }
+                        let new_action = match storing_argument.action() {
+                            Action::Extend(v) => {
+                                let mut new_v = v.clone();
+                                new_v.append(&mut c.clone());
+                                Action::Extend(new_v)
+                            }
+                            _ => panic!(),
+                        };
+                        Ok(storing_argument.with_action(new_action))
+                    }
+                    Action::Count(x) => Ok(argument.with_action(Action::Count(x + 1))),
+                    Action::Extend(v) => {
+                        argument
+                            .arg_value_in_choices(&arg_val_vec)
+                            .map_err(ParserError::InvalidChoice)?;
+                        let mut new_v = v.clone();
+                        new_v.append(&mut arg_val_vec);
+                        Ok(argument.with_action(Action::Extend(new_v)))
+                    }
+                }?
+            } else {
+                // TODO turn if else into match w/ is_flag_arg
+                // TODO process actions, depending on arg type
+                argument.with_action(match argument.action() {
+                    Action::Store(_) => {
+                        argument
+                            .arg_value_in_choices(&arg_val_vec)
+                            .map_err(ParserError::InvalidChoice)?;
+                        Ok(Action::Store(arg_val_vec))
+                    }
+                    _ => panic!(), // TODO what else to support for posn arguments
+                }?)
+            };
+
+            seen_arguments.insert(new_argument.clone());
+            if !processed_arguments.insert(new_argument.clone()) {
+                processed_arguments.replace(new_argument.clone());
+            }
+        }
+
+        // defaults for missing flag arguments / rquired missing args
+        let mut missing_required_flag_args = Vec::new();
         for arg in self.flag_args.iter() {
-            if !argument_values.contains(arg) {
+            if !processed_arguments.contains(arg) {
                 if arg.required() {
-                    remaining_required_flag_args.push(arg)
+                    missing_required_flag_args.push(arg)
                 } else {
                     match arg.action() {
                         Action::Store(_) => {
-                            argument_values.insert(
+                            processed_arguments.insert(
                                 arg.with_action(Action::Store(
                                     arg.default()
                                         .clone()
@@ -655,108 +802,32 @@ impl ArgumentParser {
             }
         }
 
-        if !remaining_required_flag_args.is_empty() {
-            let name_vec = remaining_required_flag_args
+        if !missing_required_flag_args.is_empty() {
+            let name_vec = missing_required_flag_args
                 .iter()
                 .map(|x| x.name())
                 .collect();
             let str_vec = string_vec_to_string(&name_vec, true);
             Err(ParserError::MissingRequiredFlagArguments(str_vec))
         } else {
-            Ok(argument_values)
+            Ok(Namespace::new(HashMap::from_iter(
+                processed_arguments.iter().map(|argument| {
+                    (
+                        argument.fetch_value().clone(),
+                        match &argument.action() {
+                            Action::Count(n) => argument
+                                .with_action(Action::Store(vec![n.to_string()]))
+                                .with_nargs(NArgs::Exact(1)),
+                            Action::Extend(v)
+                            | Action::Append(v)
+                            | Action::StoreConst(v)
+                            | Action::Store(v) => argument.with_nargs(NArgs::Exact(v.len())),
+                            _ => panic!("these shouldn't be here"),
+                        },
+                    )
+                }),
+            )))
         }
-    }
-
-    fn parse_flag_argument(&self, raw_args: &Vec<String>, idx: usize, mut arg_values: HashSet<Argument>) -> Result<(usize, HashSet<Argument>), ParserError> {
-        todo!()
-    }
-
-    pub fn parse_args2(&self, raw_args: Option<Vec<String>>) -> Result<Namespace, ParserError> {
-        let raw_args = raw_args.unwrap_or(env::args().collect());
-        let mut arg_values: HashSet<Argument> = HashSet::new();
-        let mut idx = 0;
-        let mut cur_posn_argument_idx: Option<usize> = self.positional_args.first().map(|_| 0);
-        let mut processed_posn_args: Vec<Argument> = Vec::new();
-        // contine to parse so long as posn arguments are left or raw args haven't been looked at (may have flags)
-        while idx <= raw_args.len() {
-            if self.prefix_chars.parse_string(raw_args[idx].as_str()).is_flag() {
-                (idx, arg_values) = self.parse_flag_argument(&raw_args, idx, arg_values)?;
-            } else if cur_posn_argument_idx.is_none() {
-                panic!() // TODO out of posn args
-            } else {
-                let cur_posn_argument = &self.positional_args[cur_posn_argument_idx.unwrap()];
-                let end_idx = match cur_posn_argument.nargs() {
-                    NArgs::Range(_, _) => panic!(), // TODO should we even support this
-                    NArgs::Exact(n) => idx + n,
-                    NArgs::ZeroOrOne => todo!(),
-                    NArgs::AnyNumber => todo!(),
-                    NArgs::AtLeastOne => todo!(),
-                };
-
-                let arg_val_vec = raw_args[idx..end_idx].to_vec();
-                let new_argument = cur_posn_argument.with_action(match cur_posn_argument.action() {
-                    Action::Store(_) => {
-                        cur_posn_argument
-                                .arg_value_in_choices(&arg_val_vec)
-                                .map_err(ParserError::InvalidChoice)?;
-                            Ok(Action::Store(arg_val_vec))
-                    },
-                    _ => panic!(), // TODO what else to support for posn arguments
-                }?);
-
-                processed_posn_args.push(new_argument.clone());
-
-                cur_posn_argument_idx = if cur_posn_argument_idx.is_some() && cur_posn_argument_idx.unwrap() + 1 >= self.positional_args.len() {
-                     None
-                } else {
-                    Some(cur_posn_argument_idx.unwrap() + 1)
-                };
-              
-            }
-        }
-
-        for argument in processed_posn_args {
-            arg_values.insert(argument.clone());
-        }
-
-        Ok(Namespace::new(HashMap::from_iter(arg_values.iter().map(|argument| {
-            (argument.fetch_value().clone(), match &argument.action() {
-                Action::Count(n) => argument
-                    .with_action(Action::Store(vec![n.to_string()]))
-                    .with_nargs(NArgs::Exact(1)),
-                Action::Extend(v)
-                | Action::Append(v)
-                | Action::StoreConst(v)
-                | Action::Store(v) => argument.with_nargs(NArgs::Exact(v.len())),
-                _ => panic!("these shouldn't be here"),
-            })
-        }))))
-    }
-
-    pub fn parse_args(&self, raw_args: Option<Vec<String>>) -> Result<Namespace, ParserError> {
-        let raw_args = raw_args.unwrap_or(env::args().collect());
-        let mut arg_values: HashSet<Argument> = HashSet::new();
-        let mut idx = 0;
-        (arg_values, idx) = self.parse_positional_arguments(arg_values, &raw_args, idx)?;
-        arg_values = self.parse_flag_arguments(arg_values, raw_args[idx..].to_vec())?;
-
-        let mut string_vals: HashMap<String, Argument> = HashMap::new();
-        for argument in arg_values.iter() {
-            string_vals.insert(
-                argument.fetch_value().clone(),
-                match &argument.action() {
-                    Action::Count(n) => argument
-                        .with_action(Action::Store(vec![n.to_string()]))
-                        .with_nargs(NArgs::Exact(1)),
-                    Action::Extend(v)
-                    | Action::Append(v)
-                    | Action::StoreConst(v)
-                    | Action::Store(v) => argument.with_nargs(NArgs::Exact(v.len())),
-                    _ => panic!("these shouldn't be here"),
-                },
-            );
-        }
-        Ok(Namespace::new(string_vals))
     }
 
     pub fn add_subparsers() {}
@@ -872,64 +943,6 @@ mod test {
         argument_name::ArgumentName,
         argument_parser::PrefixChars,
     };
-
-    #[test]
-    fn add_zero_sized_positional_argument() {
-        assert_eq!(
-            default_arg_parser()
-                .add_argument::<&str>(
-                    vec!["bar"],
-                    None,
-                    Some(NArgs::AnyNumber),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None
-                )
-                .unwrap_err(),
-            ArgumentError::ZeroSizedPositionalArgument
-        )
-    }
-
-    #[test]
-    fn add_positional_argument_with_variable_args_after_another() {
-        assert_eq!(
-            default_arg_parser()
-                .add_argument::<&str>(
-                    vec!["bar"],
-                    None,
-                    Some(NArgs::AtLeastOne),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None
-                )
-                .unwrap()
-                .add_argument::<&str>(
-                    vec!["foo"],
-                    None,
-                    Some(NArgs::AtLeastOne),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None
-                )
-                .unwrap_err(),
-            ArgumentError::TwoVariableSizedPositionalArguments
-        )
-    }
 
     #[test]
     fn add_non_required_positional_argument() {

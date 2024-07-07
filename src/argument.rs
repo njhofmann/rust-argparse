@@ -283,8 +283,6 @@ impl Argument {
             return Err(ArgumentError::RequiredMarkedForPositionalArgument);
         } else if let Some(NArgs::Range(_, _)) = nargs {
             return Err(ArgumentError::RangeSizeGivenToPositionalArgument);
-        } else if nargs.is_some() && nargs.unwrap().can_be_zero() {
-            return Err(ArgumentError::ZeroSizedPositionalArgument);
         }
 
         let required = match (&action, required) {

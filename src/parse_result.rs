@@ -352,7 +352,7 @@ mod test {
             assert_eq!(
                 setup_parser_error(vec![
                     "val1", "--foo1", "one", "--foo3", "one", "two", "three", "--foo4", "one",
-                    "two", "three", "four", "--foo5", "one", "two", "three", "four",
+                    "two", "three", "four", "--foo5", "one", "two", "three", "four", "five"
                 ]),
                 ParserError::MissingPositionArguments("[[bar], [boo]]".to_string())
             )
@@ -362,7 +362,7 @@ mod test {
         fn incorrect_positional_arguments_value_count_out_of_bounds() {
             assert_eq!(
                 setup_parser_error(vec!["val1", "val2", "val3"]),
-                ParserError::IncorrectValueCount("[boo]".to_string(), NArgs::Exact(2), 1)
+                ParserError::IncorrectValueCount("boo".to_string(), NArgs::Exact(2), 1)
             )
         }
 
@@ -374,7 +374,7 @@ mod test {
                     "--foo4", "one", "two", "three", "four", "--foo5", "one", "two", "three",
                     "four",
                 ]),
-                ParserError::IncorrectValueCount("[boo]".to_string(), NArgs::Exact(2), 1)
+                ParserError::IncorrectValueCount("boo".to_string(), NArgs::Exact(2), 1)
             )
         }
 
@@ -411,18 +411,6 @@ mod test {
                     "one", "two", "three", "four", "five"
                 ]),
                 ParserError::DuplicateFlagArgument("[--foo1]".to_string())
-            )
-        }
-
-        #[test]
-        fn expected_flag_argument() {
-            assert_eq!(
-                setup_parser_error(vec![
-                    "val1", "val2", "val3", "val4", "val5", "--foo1", "one", "--foo3", "one",
-                    "two", "three", "--foo4", "one", "two", "three", "four", "--foo5", "one",
-                    "two", "three", "four", "five"
-                ]),
-                ParserError::ExpectedFlagArgument("val5".to_string())
             )
         }
 

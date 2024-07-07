@@ -89,24 +89,31 @@ mod actions {
 
         #[test]
         fn duplicate() {
-            assert_eq!(ArgumentParser::default()
-                .add_argument::<&str>(
-                    vec!["--foo", "-f"],
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    Some("boo"),
-                    None,
-                )
-                .unwrap()
-                .parse_args(Some(vec!["-f".to_string(), "test".to_string(), "-f".to_string(), "young".to_string()]))
-                .unwrap_err(),
-            ParserError::DuplicateFlagArgument("[--foo, -f]".to_string()));
+            assert_eq!(
+                ArgumentParser::default()
+                    .add_argument::<&str>(
+                        vec!["--foo", "-f"],
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some("boo"),
+                        None,
+                    )
+                    .unwrap()
+                    .parse_args(Some(vec![
+                        "-f".to_string(),
+                        "test".to_string(),
+                        "-f".to_string(),
+                        "young".to_string()
+                    ]))
+                    .unwrap_err(),
+                ParserError::DuplicateFlagArgument("[--foo, -f]".to_string())
+            );
         }
     }
 
@@ -238,31 +245,32 @@ mod actions {
     }
 
     mod count {
-use super::*;
+        use super::*;
 
         #[test]
         fn count() {
             let namespace = ArgumentParser::default()
-            .add_argument::<&str>(
-                vec!["--foo", "-f"],
-                Some("count"),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap()
-            .parse_args(Some(vec!["-f".to_string(), "--foo".to_string(), "-f".to_string()]))
-            .unwrap();
-        assert_eq!(
-            namespace.get_one_value::<usize>("foo").unwrap(),
-            3
-        )
+                .add_argument::<&str>(
+                    vec!["--foo", "-f"],
+                    Some("count"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .parse_args(Some(vec![
+                    "-f".to_string(),
+                    "--foo".to_string(),
+                    "-f".to_string(),
+                ]))
+                .unwrap();
+            assert_eq!(namespace.get_one_value::<usize>("foo").unwrap(), 3)
         }
     }
 }

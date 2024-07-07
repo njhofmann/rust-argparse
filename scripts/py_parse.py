@@ -2,18 +2,33 @@ import argparse as ap
 import sys
 
 def parse_from_nargs(nargs):
+    has_flag = False
     parser = ap.ArgumentParser()
+    is_flag = False
     for (i, arg) in enumerate(nargs):
         match arg:
             case 'v':
                 arg = '*'
-            case 'e':
-                arg = 1
+            case 'z':
+                arg = '?'
             case 'o':  # one or more
                 arg = '+'
+            case 'f':
+                has_flag = True
+                is_flag = True
+                arg = None
             case other: # zero or one
-                arg = '?'
-        parser.add_argument(str(i), nargs=arg)
+                arg = int(other)
+
+        if arg:
+            if is_flag:
+                parser.add_argument(f'--{i}', nargs=arg)
+                is_flag = False
+            else:
+                parser.add_argument(str(i), nargs=arg)
+    
+    if has_flag or sys.argv[2:]:
+        return parser.parse_args(sys.argv[2:])
     return parser.parse_args(['a', 'b', 'c', 'd', 'e'])
 
 if __name__ == '__main__':

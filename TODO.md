@@ -1,14 +1,12 @@
+- pass all current tests
+- setup proper crate structure
+    - integration tests run w/ cargo test
 - handle required, default, and actions
     - help isn't required, but doesn't need a default
 - properly handle posn + flag argument ordering, nargs 
     - print_usage: all flags first w/ brackets, posn after
     - assume currnt posn if they exist, if flag appears then parse that instead
     - (any/one+) --> exact; pull from prev var posn else insufficient args  
-    - write out tests for other scenarios
-        - posn only
-        - flag posn mix
-    - v|o --> v; second v doesn't get anything
-    - v|o --> o; second o gets 1
 - count -vvv action support?
 - test error cases
     - different actions w/ default, required, nargs, flag vs posn arg,

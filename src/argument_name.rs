@@ -172,7 +172,7 @@ impl Hash for ArgumentName {
             ArgumentName::Flag { full, abbrev } => {
                 full.hash(state);
                 abbrev.hash(state)
-            },
+            }
         };
     }
 }
@@ -181,7 +181,16 @@ impl PartialEq for ArgumentName {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Positional(l0), Self::Positional(r0)) => l0 == r0,
-            (Self::Flag { full: l_full, abbrev: l_abbrev }, Self::Flag { full: r_full, abbrev: r_abbrev }) => l_full == r_full && l_abbrev == r_abbrev,
+            (
+                Self::Flag {
+                    full: l_full,
+                    abbrev: l_abbrev,
+                },
+                Self::Flag {
+                    full: r_full,
+                    abbrev: r_abbrev,
+                },
+            ) => l_full == r_full && l_abbrev == r_abbrev,
             _ => false,
         }
     }

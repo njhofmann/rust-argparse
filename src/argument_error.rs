@@ -20,8 +20,6 @@ pub enum ArgumentError {
     EmptyArgumentName,
     #[error("duplicate argument name {0} found")]
     DuplicateArgumentName(String),
-    #[error("tried adding a variable sized positional argument after another variable sized positional argument")]
-    TwoVariableSizedPositionalArguments,
     #[error("required is reserved for flag arguments")]
     RequiredMarkedForPositionalArgument,
     #[error("given a mix of positional arguments & flag argument names")]
@@ -30,8 +28,6 @@ pub enum ArgumentError {
     NonRequiredArgumentNotGivenDefaultValue(String),
     #[error("{0}")]
     InvalidChoice(InvalidChoice),
-    #[error("given a positional argument that could possibly accept no arguments")]
-    ZeroSizedPositionalArgument,
     #[error("given a positional argument that accepts a set range of values")]
     // TODO should this be supported if single?
     RangeSizeGivenToPositionalArgument,
