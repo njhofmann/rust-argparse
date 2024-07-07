@@ -1,4 +1,3 @@
-- - panics to errors
 - test error cases
     - different actions w/ default, required, nargs, flag vs posn arg,
     - handle required, default, and actions

@@ -346,14 +346,13 @@ mod ordering {
             ],
             vec!["a", "b", "c", "d", "e"],
         );
-        assert_eq!(namespace.get::<String>("0").unwrap(), vec!["a".to_string(), "b".to_string()]);
+        assert_eq!(
+            namespace.get::<String>("0").unwrap(),
+            vec!["a".to_string(), "b".to_string()]
+        );
         assert_eq!(
             namespace.get::<String>("1").unwrap(),
-            vec![
-                "c".to_string(),
-                "d".to_string(),
-                "e".to_string()
-            ]
+            vec!["c".to_string(), "d".to_string(), "e".to_string()]
         );
         assert!(namespace.get::<String>("2").unwrap().is_empty());
     }
@@ -499,13 +498,10 @@ mod ordering {
             namespace.get::<String>("0").unwrap(),
             vec!["a".to_string(), "b".to_string()]
         );
-        assert_eq!(
-            namespace.get::<String>("1").unwrap(),
-            vec!["c".to_string()]
-        );
+        assert_eq!(namespace.get::<String>("1").unwrap(), vec!["c".to_string()]);
         assert_eq!(
             namespace.get::<String>("2").unwrap(),
-            vec![ "d".to_string(), "e".to_string()]
+            vec!["d".to_string(), "e".to_string()]
         );
     }
 
@@ -559,7 +555,8 @@ mod ordering {
 
     #[test]
     fn zero_or_one_flag_one() {
-        let namespace: Namespace = init_test_arg_parser(vec![(NArgs::ZeroOrOne, true)], vec!["--0", "a"]);
+        let namespace: Namespace =
+            init_test_arg_parser(vec![(NArgs::ZeroOrOne, true)], vec!["--0", "a"]);
         assert_eq!(namespace.get::<String>("0").unwrap(), vec!["a".to_string()]);
     }
 

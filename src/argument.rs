@@ -18,6 +18,25 @@ const STORE_TRUE_STRING: &str = "store_true";
 const STORE_FALSE_STRING: &str = "store_false";
 const COUNT_STRING: &str = "count";
 
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum ActionError {
+    #[error("constant given for a action that isn't'append_const' or 'store_const'")]
+    MissingConstant,
+    #[error("arguments with 'append_const' must be given a destination")]
+    InvalidActionForConstant,
+    #[error("arguments with 'append_const' must be given a destination")]
+    MissingDestination,
+    #[error("destination given for a non-'append_const' action")]
+    InvalidActionForDestination,
+    #[error("arguments with 'version' action must be given a version")]
+    MissingVersion,
+    #[error("version given for a non-'version' action")]
+    InvalidActionForVersion,
+    #[error("positional argument given non-store action {0}")]
+    PositionalArgumentGivenNonStoreAction(String),
+    #[error("{0} is not a supported Action")]
+    InvalidAction(String),
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -38,23 +57,26 @@ impl Action {
         constant: Option<Vec<String>>,
         version: Option<&str>,
         dest: Option<&str>,
-    ) -> Result<Action, ArgumentError> {
+    ) -> Result<Action, ActionError> {
         match (action, &constant) {
-            (STORE_CONST_STRING, None) | (APPEND_CONST_STRING, None) => todo!(), // TODO missing const
+            (STORE_CONST_STRING, None) | (APPEND_CONST_STRING, None) => {
+                Err(ActionError::MissingConstant)
+            }
             (STORE_CONST_STRING, Some(_)) | (APPEND_CONST_STRING, Some(_)) | (_, None) => Ok(()),
-            (_, Some(_)) => todo!(), // TODO wrong action
+            (_, Some(_)) => Err(ActionError::InvalidActionForConstant),
         }?;
 
         match (action, dest) {
-            (APPEND_CONST_STRING, None) => todo!(), // TODO missing dest
+            (APPEND_CONST_STRING, None) => Err(ActionError::MissingDestination),
             (APPEND_CONST_STRING, Some(_)) | (_, None) => Ok(()),
-            (_, Some(_)) => todo!(), // TODO wrong action
+            (_, Some(_)) => Err(ActionError::InvalidActionForDestination),
         }?;
 
         match (action, version) {
-            (VERSION_STRING, None) => todo!(), // TODO missing version
-            (_, Some(_)) => todo!(),      // TODO wrong action
-            _ => Ok(()),                  // TODO check if empty
+            (VERSION_STRING, None) => Err(ActionError::MissingVersion),
+            (VERSION_STRING, Some(x)) if x.is_empty() => Err(ActionError::MissingVersion),
+            (_, Some(_)) => Err(ActionError::InvalidActionForVersion),
+            _ => Ok(()),
         }?;
 
         let action = match action {
@@ -68,12 +90,12 @@ impl Action {
             HELP_STRING => Ok(Action::Help),
             VERSION_STRING => Ok(Action::Version(version.unwrap().to_string())),
             EXTEND_STRING => Ok(Action::Extend(vec![])),
-            x => Err(ArgumentError::InvalidAction(x.to_string())),
+            x => Err(ActionError::InvalidAction(x.to_string())),
         }?;
 
         match action {
             Action::Store(_) if !is_flag_argument => Err(
-                ArgumentError::PositionalArgumentGivenNonStoreAction((&action).to_string()),
+                ActionError::PositionalArgumentGivenNonStoreAction((&action).to_string()),
             ),
             action => Ok(action),
         }
@@ -88,7 +110,7 @@ impl Display for Action {
                 if c.len() == 1 {
                     match c.first().unwrap().as_str() {
                         "true" => STORE_TRUE_STRING,
-                        "false" =>STORE_FALSE_STRING,
+                        "false" => STORE_FALSE_STRING,
                         _ => STORE_CONST_STRING,
                     }
                 } else {
@@ -277,10 +299,11 @@ impl Argument {
     ) -> Result<Argument, ArgumentError> {
         let action = match action {
             None => Ok(Action::Store(vec![])),
-            Some(x) => Action::new(x, name.is_flag_argument(), constant, version, dest),
+            Some(x) => Action::new(x, name.is_flag_argument(), constant, version, dest)
+                .map_err(|e| ArgumentError::ActionError(e)),
         }?;
 
- if !name.is_flag_argument() && required.is_some() {
+        if !name.is_flag_argument() && required.is_some() {
             return Err(ArgumentError::RequiredMarkedForPositionalArgument);
         }
 
@@ -357,7 +380,7 @@ impl Argument {
                     for choice in choices.iter() {
                         if !nargs.is_valid_number(choice.len()) {
                             return Err(ArgumentError::InvalidChoiceLength(
-                                string_vec_to_string(choice, choice.len() != 1), // TODO fix this
+                                string_vec_to_string(choice, choice.len() != 1),
                                 choice.len(),
                                 nargs.to_string(),
                             ));

@@ -13,8 +13,6 @@ use crate::{
 };
 use thiserror::Error;
 
-const ILLEGAL_PREFIX_CHARS: [char; 3] = [' ', '\n', '\t']; // TODO fill out illegal chars
-
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum ParserError {
     #[error("argument {0} expected {1} values, but found {2}")]
@@ -30,7 +28,7 @@ pub enum ParserError {
     #[error("{0}")]
     InvalidChoice(InvalidChoice),
     #[error("no arguments were found to process remaining raw arguments {0}")]
-    UnprocessedRawArguments(String)
+    UnprocessedRawArguments(String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -61,24 +59,24 @@ impl PrefixChars {
                 if temp.is_empty() {
                     Err(ArgumentError::EmptyPrefixChars)
                 } else {
-                    let illegal_chars: Vec<String> = ILLEGAL_PREFIX_CHARS
+                    let mut illegal_chars: Vec<String> = temp
                         .iter()
                         .filter_map(|x| {
-                            if temp.contains(x) {
+                            if x.is_whitespace() {
                                 Some(x.to_string())
                             } else {
                                 None
                             }
                         })
                         .collect();
-
+                    illegal_chars.sort(); // for consistent tests
                     if illegal_chars.is_empty() {
                         Ok(PrefixChars(temp))
                     } else {
                         Err(ArgumentError::IllegalPrefixChars(string_vec_to_string(
                             &illegal_chars,
                             false,
-                        ))) // TODO change this error
+                        )))
                     }
                 }
             }
@@ -427,29 +425,6 @@ impl ArgumentParser {
         self.store_argument(new_argument, dest)
     }
 
-    fn divide_raw_positional_args(
-        &self,
-        all_nargs: Vec<&NArgs>,
-        args: &Vec<String>,
-    ) -> Result<Vec<usize>, ParserError> {
-        let mut indices = vec![0];
-        for narg in all_nargs.into_iter() {
-            match narg {
-                NArgs::Exact(x) => {
-                    let new_index = indices.last().unwrap() + x;
-                    if new_index <= args.len() {
-                        indices.push(new_index)
-                    } else {
-                        panic!() // TODO not enough values
-                    }
-                }
-                NArgs::AtLeastOne => todo!(),
-                _ => panic!("unsupported nargs for positional arguments"),
-            }
-        }
-        Ok(indices)
-    }
-
     pub fn arguments(&self) -> Vec<&Argument> {
         let mut arguments = Vec::new();
         for argument in self.positional_args.iter() {
@@ -466,42 +441,52 @@ impl ArgumentParser {
         let mut processed_arguments: HashSet<Argument> = HashSet::new();
         let mut idx = 0;
         let mut cur_posn_argument_idx: Option<usize> = self.positional_args.first().map(|_| 0);
-        let mut processed_posn_args: Vec<Argument> = Vec::new(); 
+        let mut processed_posn_args: Vec<Argument> = Vec::new();
         let mut arg_and_raw_arg_range: Vec<(Argument, (usize, usize))> = Vec::new();
-        // TODO This doesn't need to be option
-        let mut last_arg_group_idx: Option<usize> = None;  // tracks indices in arg_and_raw_arg_range 
-        // contine to parse so long as posn arguments are left or raw args haven't been looked at (may have flags)
+        // TODO This doesn't need to be option, remove this
+        let mut last_arg_group_idx: Option<usize> = None; // tracks indices in arg_and_raw_arg_range
+                                                          // contine to parse so long as posn arguments are left or raw args haven't been looked at (may have flags)
         while idx < raw_args.len()
             || (cur_posn_argument_idx.is_some_and(|idx| idx < self.positional_args.len()))
-        {           
-            let cur_raw_arg = if idx >= raw_args.len()  {
+        {
+            let cur_raw_arg = if idx >= raw_args.len() {
                 None
             } else {
                 Some(raw_args[idx].as_str())
             };
-            
-            let found_argument = if cur_raw_arg.is_some() && self.prefix_chars.parse_string(cur_raw_arg.unwrap()).is_flag() {
+
+            let found_argument = if cur_raw_arg.is_some()
+                && self
+                    .prefix_chars
+                    .parse_string(cur_raw_arg.unwrap())
+                    .is_flag()
+            {
                 let cur_raw_arg = match self.prefix_chars.parse_string(&cur_raw_arg.unwrap()) {
-                    PrefixCharOutcomes::LONG => Ok(cur_raw_arg.unwrap()[FLAG_ARG_LEN..].to_string()),
+                    PrefixCharOutcomes::LONG => {
+                        Ok(cur_raw_arg.unwrap()[FLAG_ARG_LEN..].to_string())
+                    }
                     PrefixCharOutcomes::ABBREV => {
                         Ok(cur_raw_arg.unwrap()[FLAG_ARG_ABBREV_LEN..].to_string())
                     }
-                    _ => panic!("found non-flag argument")
+                    _ => panic!("found non-flag argument"),
                 }?;
 
                 let mut found_arg = self.get_flag_argument(&cur_raw_arg)?;
                 if processed_arguments.contains(&found_arg) {
                     found_arg = processed_arguments.get(&found_arg).unwrap().clone();
                 }
-                
+
                 last_arg_group_idx = Some(last_arg_group_idx.map_or(0, |x| x + 1));
                 idx += 1; // move past flag
                 Ok(found_arg.clone())
             } else if cur_posn_argument_idx.is_none() {
-                Err(ParserError::UnprocessedRawArguments(string_vec_to_string(&raw_args[idx..].to_vec(), false)))
+                Err(ParserError::UnprocessedRawArguments(string_vec_to_string(
+                    &raw_args[idx..].to_vec(),
+                    false,
+                )))
             } else {
-                if last_arg_group_idx.is_none() { // TODO this is never 
-                    last_arg_group_idx = Some(last_arg_group_idx.map_or(0, |x| x + 1)) 
+                if last_arg_group_idx.is_none() {
+                    last_arg_group_idx = Some(last_arg_group_idx.map_or(0, |x| x + 1))
                 }
                 let found_argument = self.positional_args[cur_posn_argument_idx.unwrap()].clone();
                 cur_posn_argument_idx = if cur_posn_argument_idx
@@ -525,7 +510,7 @@ impl ArgumentParser {
             };
 
             let mut start_idx = idx;
-            let mut found_value_count= 0;
+            let mut found_value_count = 0;
             let mut n_missing_args = 0;
 
             let mut end_idx: Option<usize> = match found_argument.nargs() {
@@ -543,7 +528,6 @@ impl ArgumentParser {
                             idx += 1;
                             return_val = Some(idx);
                         }
-                    
                     }
                     return_val
                 }
@@ -573,29 +557,38 @@ impl ArgumentParser {
                     }
                 }
             };
-            
+
             if end_idx.is_none() {
                 start_idx -= n_missing_args;
                 end_idx = Some(start_idx + n_missing_args + found_value_count);
 
                 let start_group_idx = match (last_arg_group_idx, arg_and_raw_arg_range.is_empty()) {
                     (None, true) => 0,
-                    (None, false) => return Err(ParserError::IncorrectValueCount(
-                        found_argument.name().to_string(),
-                        found_argument.nargs().clone(),
-                        found_value_count,
-                    )), // TODO raise not enough args here 
+                    (None, false) => {
+                        return Err(ParserError::IncorrectValueCount(
+                            found_argument.name().to_string(),
+                            found_argument.nargs().clone(),
+                            found_value_count,
+                        ))
+                    } // TODO raise not enough args here
                     (Some(n), false) => n,
                     (Some(_), true) => 0,
                 };
 
                 let mut group_shifts = Vec::new();
-                for (relative_idx, (parsed_argument, (group_start_idx, group_end_idx))) in arg_and_raw_arg_range[start_group_idx..].iter().enumerate().rev() {
-                    let n_excess_args = *group_end_idx as i32 - *group_start_idx as i32 - match parsed_argument.nargs() {
-                        NArgs::Exact(n) => *n as i32,
-                        NArgs::ZeroOrOne | NArgs::AnyNumber => 0,
-                        NArgs::AtLeastOne => 1,
-                    };
+                for (relative_idx, (parsed_argument, (group_start_idx, group_end_idx))) in
+                    arg_and_raw_arg_range[start_group_idx..]
+                        .iter()
+                        .enumerate()
+                        .rev()
+                {
+                    let n_excess_args = *group_end_idx as i32
+                        - *group_start_idx as i32
+                        - match parsed_argument.nargs() {
+                            NArgs::Exact(n) => *n as i32,
+                            NArgs::ZeroOrOne | NArgs::AnyNumber => 0,
+                            NArgs::AtLeastOne => 1,
+                        };
 
                     debug_assert!(n_excess_args >= 0);
 
@@ -626,18 +619,29 @@ impl ArgumentParser {
                         found_argument.name().to_string(),
                         found_argument.nargs().clone(),
                         found_value_count,
-                    ))
+                    ));
                 }
 
-                for (abs_idx, shift ) in group_shifts.into_iter().rev() {
-                    for (rel_idx, (arg, (start, end))) in arg_and_raw_arg_range.clone()[abs_idx..].iter().enumerate() {
+                for (abs_idx, shift) in group_shifts.into_iter().rev() {
+                    for (rel_idx, (arg, (start, end))) in
+                        arg_and_raw_arg_range.clone()[abs_idx..].iter().enumerate()
+                    {
                         // only take items from first item in group, shift remaining one's down
-                        arg_and_raw_arg_range[abs_idx + rel_idx] = (arg.clone(), (if rel_idx == 0 { *start } else { *start - shift}, end - shift));
+                        arg_and_raw_arg_range[abs_idx + rel_idx] = (
+                            arg.clone(),
+                            (
+                                if rel_idx == 0 { *start } else { *start - shift },
+                                end - shift,
+                            ),
+                        );
                     }
                 }
             }
 
-            arg_and_raw_arg_range.push((found_argument, (start_idx, end_idx.expect("this should be set now"))))
+            arg_and_raw_arg_range.push((
+                found_argument,
+                (start_idx, end_idx.expect("this should be set now")),
+            ))
         }
 
         let mut seen_arguments: HashSet<Argument> = HashSet::new(); // TODO needed? or can just use arg_vals
@@ -645,10 +649,10 @@ impl ArgumentParser {
             let mut arg_val_vec = raw_args[start_idx..end_idx].to_vec();
             let new_argument = if argument.name().is_flag_argument() {
                 let argument = if processed_arguments.contains(&argument) {
-                                processed_arguments.get(&argument).unwrap().clone()
-                            } else {
-                                argument
-                            };
+                    processed_arguments.get(&argument).unwrap().clone()
+                } else {
+                    argument
+                };
                 match argument.action() {
                     Action::Help => {
                         println!("{}", self.format_help());
@@ -707,7 +711,7 @@ impl ArgumentParser {
                                 new_v.append(&mut c.clone());
                                 Action::Extend(new_v)
                             }
-                            _ => panic!(),
+                            _ => panic!("storing argument should have extend action"),
                         };
                         Ok(storing_argument.with_action(new_action))
                     }
@@ -729,7 +733,7 @@ impl ArgumentParser {
                             .map_err(ParserError::InvalidChoice)?;
                         Ok(Action::Store(arg_val_vec))
                     }
-                    _ => panic!(), // TODO what else to support for posn arguments
+                    _ => panic!("given unsupported action of positional argument"),
                 }?)
             };
 
@@ -1256,7 +1260,7 @@ mod test {
         assert_eq!(
             ArgumentParser::new(None, None, None, None, None, Some("\n\t"), None, None, None)
                 .unwrap_err(),
-            ArgumentError::IllegalPrefixChars("\n, \t".to_string())
+            ArgumentError::IllegalPrefixChars("\t, \n".to_string())
         )
     }
 }

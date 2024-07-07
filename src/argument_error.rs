@@ -1,9 +1,11 @@
 use thiserror::Error;
 
-use crate::InvalidChoice;
+use crate::{argument::ActionError, InvalidChoice};
 
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum ArgumentError {
+    #[error("{0}")]
+    ActionError(ActionError),
     #[error("required argument {0} given default value {1}")]
     RequiredArgumentDefaultValueGiven(String, String),
     #[error("given default value has length {0} but expected {1} arguments")]
@@ -30,8 +32,6 @@ pub enum ArgumentError {
     InvalidChoice(InvalidChoice),
     #[error("start of NArgs::Range {0} is >= than end {1}")]
     InvalidRangeSize(usize, usize),
-    #[error("{0} is not a supported Action")]
-    InvalidAction(String),
     #[error("duplicated help argument added under argument {0}")]
     DuplicateHelpArgument(String),
     #[error("duplicated help argument added under argument {0}")]
@@ -42,8 +42,6 @@ pub enum ArgumentError {
     IllegalPrefixChars(String),
     #[error("nargs given for action {0} which doesn't expect argument values")]
     InvalidActionForNArgs(String),
-    #[error("positional argument given non-store action {0}")]
-    PositionalArgumentGivenNonStoreAction(String),
     #[error("default value given to action {0}, only allowed for append & store")]
     DefaultGivenForUnsupportedAction(String),
     #[error("choices given to unsupported action {0}, choices only supported for actions store, append, & extend")]
