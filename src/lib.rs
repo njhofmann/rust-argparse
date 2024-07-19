@@ -14,7 +14,7 @@ const FLAG_ARG_ABBREV_LEN: usize = 1;
 
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("value \"{0}\" is not one of supported values {1}")]
-struct InvalidChoice(String, String);
+pub struct InvalidChoice(String, String);
 
 fn string_vec_to_string<T: Display>(vec: &Vec<T>, add_parans: bool) -> String {
     if vec.is_empty() {

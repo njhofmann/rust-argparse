@@ -94,8 +94,8 @@ impl ArgumentName {
 
     pub fn is_flag_argument(&self) -> bool {
         match self {
-            ArgumentName::Positional(_) => false,
             ArgumentName::Flag { .. } => true,
+            _ => false,
         }
     }
 
@@ -108,9 +108,7 @@ impl ArgumentName {
                     vec![]
                 }
             }
-            (ArgumentName::Positional(x), ArgumentName::Flag { full, abbrev }) => {
-                other.overlap(self)
-            }
+            (ArgumentName::Positional(_), ArgumentName::Flag { .. }) => other.overlap(self),
             (ArgumentName::Flag { full, abbrev }, ArgumentName::Positional(x)) => {
                 if full.contains(x) || abbrev.contains(x) {
                     vec![x.clone()]
@@ -119,7 +117,7 @@ impl ArgumentName {
                 }
             }
             (
-                ArgumentName::Flag { full, abbrev },
+                ArgumentName::Flag { .. },
                 ArgumentName::Flag {
                     full: full2,
                     abbrev: abbrev2,
@@ -143,7 +141,14 @@ impl ArgumentName {
     pub fn names(&self) -> Vec<String> {
         match self {
             ArgumentName::Positional(x) => vec![x.clone()],
-            ArgumentName::Flag { full, abbrev } => full.clone(),
+            ArgumentName::Flag { full, .. } => full.clone(),
+        }
+    }
+
+    pub fn num_of_identifiers(&self) -> usize {
+        match self {
+            ArgumentName::Positional(..) => 1,
+            ArgumentName::Flag { full, abbrev } => full.len() + abbrev.len(),
         }
     }
 }

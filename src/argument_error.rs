@@ -50,4 +50,6 @@ pub enum ArgumentError {
     MultiplePositionalArgumentNames,
     #[error("required given to unsupported action")]
     RequiredGivenToUnsupportedAction,
+    #[error("{0} is not a supported strategy for resolving conflicting arguments - error and override / resolve are supported")]
+    UnsupportedConflictHandlingStrategy(String),
 }

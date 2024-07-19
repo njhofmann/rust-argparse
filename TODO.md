@@ -1,6 +1,34 @@
+- allow_abbrev tests
+    - abstract method
+    - test error if off
+    - ambiguous test
+    - test w override option
+- make all parser methods functional
+- argparser print methods
+    - usage
+    - epilog
 - test error cases
+    - actions for posn args
     - different actions w/ default, required, nargs, flag vs posn arg,
     - handle required, default, and actions
+    - invalid actions
+- parent parsers
+    - give parent parser(s)
+    - parent parsers with conflict
+    - parent parsers with conflict resolution
+- -long_option=single_value
+- -[short_option]single_value
+- combine short options
+    test -vvv count
+- impl parser default
+    - error out if can't String --> T support, or just warning
+- misc behavior
+    - For positional arguments with nargs equal to ? or *, the default value is used when no command-line argument was present:
+        - is default required bere
+    - Providing default=argparse.SUPPRESS causes no attribute to be added if the command-line argument was not present:
+- add_subparser
+- add_mutually_exclusive_group
+- add_argument_group
 - setup proper crate lib structure
     - integration tests run w/ cargo test
      check library release requirements
@@ -8,30 +36,18 @@
     - keep private
         - argument name
     - write documentation
-    - how to release library guide
-- count -vvv action support?
-
-- impl parser default
-    - error out if can't String --> T support, or just warning
-- build arg parser desp
-- argument & parser builder methods
-    - with_default, with_const, etc.
-- how to test help & versions
-- other tests
-    - nargs range
-    - allow_abbrv
     - how to do boolean flags
     - test can't fetch flag w/ abbre
     - prefix chargs
         - mixed gives error
-- suberror types for action, prefix error?
-- argparser print methods
-- add_subparser
+    - how to release library guide
+
+- build arg parser desp
+- argument & parser builder methods
+    - with_default, with_const, etc.
+- how to test help & versions
+
 - argparser alt parse method
-- parent + child argparser
-- argparser conflict_handler¶
-- argument group
-    - mutually exclusive group
 - fromfile_prefix_chars
     - check for conflicts with PrefixChars
 

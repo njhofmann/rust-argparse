@@ -449,6 +449,20 @@ impl Argument {
         }
     }
 
+    pub fn with_name(&self, name: ArgumentName) -> Argument {
+        Argument {
+            name: name,
+            required: self.required,
+            help: self.help.clone(),
+            nargs: self.nargs,
+            choices: self.choices.clone(),
+            default: self.default.clone(),
+            action: self.action.clone(),
+            metavar: self.metavar.clone(),
+            dest: self.dest.clone(),
+        }
+    }
+
     pub fn with_nargs(&self, new_nargs: NArgs) -> Argument {
         Argument {
             name: self.name.clone(),
