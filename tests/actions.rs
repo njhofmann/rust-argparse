@@ -88,6 +88,170 @@ mod actions {
         }
 
         #[test]
+        fn allow_abbrev_conflicting_result() {
+            let parser = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["--beam"],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["--beast"],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+            assert_eq!(
+                parser
+                    .parse_args(Some(vec!["--bea".to_string(), "test".to_string()]))
+                    .unwrap_err(),
+                ParserError::AmbiguousAbbreviatedArguments(
+                    "bea".to_string(),
+                    "[beam, beast]".to_string()
+                )
+            );
+        }
+
+        #[test]
+        fn allow_abbrev_argument_override_enabled() {
+            let mut parser =  ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("override"),
+                None,
+                None,
+            )
+            .unwrap()
+            .add_argument::<&str>(
+                vec!["--beam"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap()
+            .add_argument::<&str>(
+                vec!["--beast"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            assert_eq!(
+                parser
+                    .parse_args(Some(vec!["--beast".to_string(), "test".to_string(), "--beam".to_string(), "test".to_string()]))
+                    .unwrap().get_one_value::<String>("beast").unwrap(),
+                "test".to_string()
+            );
+            parser = parser           .add_argument::<&str>(
+                vec!["--beast", "-b"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            parser
+                .parse_args(Some(vec!["--beast".to_string(), "test".to_string(), "--beam".to_string(), "test".to_string()]))
+                .unwrap().get_one_value::<String>("beast").unwrap(),
+            "test".to_string()
+        );
+        }
+
+        #[test]
+        fn allow_abbrev_false() {
+            let parser = ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+            )
+            .unwrap()
+            .add_argument::<&str>(
+                vec!["--beam"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap()
+            .add_argument::<&str>(
+                vec!["--beast"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            assert_eq!(
+                parser
+                    .parse_args(Some(vec!["--bea".to_string(), "test".to_string()]))
+                    .unwrap_err(),
+                ParserError::InvalidFlagArgument("bea".to_string())
+            );
+        }
+
+        #[test]
         fn duplicate() {
             assert_eq!(
                 ArgumentParser::default()

@@ -343,10 +343,11 @@ impl ArgumentParser {
                 0 => Ok(None),
                 1 => Ok(Some(possible_locations.first().unwrap().to_owned().1)),
                 _ => {
-                    let conflicting_arg_names: Vec<String> = possible_locations
+                    let mut conflicting_arg_names: Vec<String> = possible_locations
                         .into_iter()
                         .map(|(k, _)| k.clone())
                         .collect();
+                    conflicting_arg_names.sort();
                     Err(ParserError::AmbiguousAbbreviatedArguments(
                         argument_name.clone(),
                         string_vec_to_string(&conflicting_arg_names, true),
@@ -411,25 +412,11 @@ impl ArgumentParser {
             new_arg_name_mapping.insert(flag, new_arg_location);
         }
 
-        let new_allow_abbrev_mapping = self.allow_abbrev_mapping.as_ref().map(|x| {
-            let mut new_x = x.clone();
-            match argument.name() {
-                ArgumentName::Positional(_) => x.clone(), // applies only to options
-                ArgumentName::Flag { full, abbrev } => {
-                    for argument in full {
-                        if argument.len() > 1 {
-                            new_x.insert(argument.clone(), new_arg_location.clone());
-                        }
-                    }
-                    for argument in abbrev {
-                        if argument.len() > 1 {
-                            new_x.insert(argument.clone(), new_arg_location.clone());
-                        }
-                    }
-                    new_x
-                }
-            }
-        });
+        let new_allow_abbrev_mapping = self.add_arg_to_abbrev_mapping(
+            &argument,
+            new_arg_location.0,
+            &self.allow_abbrev_mapping,
+        );
 
         if let Action::AppendConst(_) = argument.action() {
             let new_dest_argument = Argument::new(
@@ -474,6 +461,33 @@ impl ArgumentParser {
         })
     }
 
+    fn add_arg_to_abbrev_mapping(
+        &self,
+        new_arg: &Argument,
+        idx: usize,
+        allow_abbrev_mapping: &Option<HashMap<String, (usize, bool)>>,
+    ) -> Option<HashMap<String, (usize, bool)>> {
+        allow_abbrev_mapping.as_ref().map(|x| {
+            let mut new_x = x.clone();
+            match new_arg.name() {
+                ArgumentName::Flag { full, abbrev } => {
+                    for argument in full {
+                        if argument.len() > 1 {
+                            new_x.insert(argument.clone(), (idx, true));
+                        }
+                    }
+                    for argument in abbrev {
+                        if argument.len() > 1 {
+                            new_x.insert(argument.clone(), (idx, true));
+                        }
+                    }
+                    new_x
+                }
+                _ => x.clone(), // applies only to options
+            }
+        })
+    }
+
     fn init_arg_idx_mappings(
         &self,
         flag_args: &Vec<Argument>,
@@ -497,25 +511,8 @@ impl ArgumentParser {
         for (idx, arg) in flag_args.iter().enumerate() {
             for arg_name in arg.flag_values() {
                 new_arg_idx_mapping.insert(arg_name.clone(), (idx, true));
-                new_allow_abbrev_mapping = new_allow_abbrev_mapping.map(|x| {
-                    let mut new_x = x.clone();
-                    match arg.name() {
-                        ArgumentName::Positional(_) => x, // applies only to options
-                        ArgumentName::Flag { full, abbrev } => {
-                            for argument in full {
-                                if argument.len() > 1 {
-                                    new_x.insert(argument.clone(), (idx, true));
-                                }
-                            }
-                            for argument in abbrev {
-                                if argument.len() > 1 {
-                                    new_x.insert(argument.clone(), (idx, true));
-                                }
-                            }
-                            new_x
-                        }
-                    }
-                })
+                new_allow_abbrev_mapping =
+                    self.add_arg_to_abbrev_mapping(arg, idx, &new_allow_abbrev_mapping);
             }
         }
         for (idx, arg) in positional_args.iter().enumerate() {
@@ -621,13 +618,13 @@ impl ArgumentParser {
             {
                 let cur_raw_arg = match self.prefix_chars.parse_string(&cur_raw_arg.unwrap()) {
                     PrefixCharOutcomes::LONG => {
-                        Ok(cur_raw_arg.unwrap()[FLAG_ARG_LEN..].to_string())
-                    }
+                        cur_raw_arg.unwrap()[FLAG_ARG_LEN..].to_string()
+                    },
                     PrefixCharOutcomes::ABBREV => {
-                        Ok(cur_raw_arg.unwrap()[FLAG_ARG_ABBREV_LEN..].to_string())
+                        cur_raw_arg.unwrap()[FLAG_ARG_ABBREV_LEN..].to_string()
                     }
                     _ => panic!("found non-flag argument"),
-                }?;
+                };
 
                 let mut found_arg = self.get_flag_argument(&cur_raw_arg)?;
                 if processed_arguments.contains(&found_arg) {

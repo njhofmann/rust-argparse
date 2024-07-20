@@ -1,9 +1,3 @@
-- allow_abbrev tests
-    - abstract method
-    - test error if off
-    - ambiguous test
-    - test w override option
-- make all parser methods functional
 - argparser print methods
     - usage
     - epilog
@@ -45,11 +39,7 @@
 - build arg parser desp
 - argument & parser builder methods
     - with_default, with_const, etc.
-- how to test help & versions
-
-- argparser alt parse method
-- fromfile_prefix_chars
-    - check for conflicts with PrefixChars
+- how to test help & versions  
 
 - will not support / deliberatly not supported
     - posn arguments don't support required
