@@ -406,7 +406,6 @@ impl ArgumentParser {
             Ok((new_positional_args.len() - 1, false))
         }?;
 
-
         let mut new_arg_name_mapping = self.arg_name_mapping.clone();
         for flag in argument.flag_values() {
             new_arg_name_mapping.insert(flag, new_arg_location);
@@ -450,9 +449,7 @@ impl ArgumentParser {
                 None,
             )
             .unwrap();
-            if !new_arg_name_mapping
-                .contains_key(new_dest_argument.fetch_value())
-            {
+            if !new_arg_name_mapping.contains_key(new_dest_argument.fetch_value()) {
                 new_flag_args.push(new_dest_argument.clone());
                 new_arg_name_mapping.insert(
                     new_dest_argument.fetch_value().clone(),
@@ -544,13 +541,16 @@ impl ArgumentParser {
         let arg_name: ArgumentName = ArgumentName::new(name, &self.prefix_chars)?.clone();
         let (new_flag_args, new_positional_args) = self.check_for_duplicate_arg_names(&arg_name)?;
         // this shouldn't happen often
-        let (new_arg_name_mapping, new_allow_abbrev_mapping)=if &new_flag_args.len() < &self.flag_args.len()
+        let (new_arg_name_mapping, new_allow_abbrev_mapping) = if &new_flag_args.len()
+            < &self.flag_args.len()
             || &new_positional_args.len() < &self.positional_args.len()
         {
-             
-                self.init_arg_idx_mappings(&new_flag_args, &new_positional_args)
+            self.init_arg_idx_mappings(&new_flag_args, &new_positional_args)
         } else {
-            (self.arg_name_mapping.clone(), self.allow_abbrev_mapping.clone())
+            (
+                self.arg_name_mapping.clone(),
+                self.allow_abbrev_mapping.clone(),
+            )
         };
         let constant = constant.map(|x| x.into_iter().map(|y| y.to_string()).collect());
         let default = default.map(|x| x.into_iter().map(|y| y.to_string()).collect());
@@ -566,7 +566,7 @@ impl ArgumentParser {
             version,
         )?;
 
-        let new_parser =       ArgumentParser {
+        let new_parser = ArgumentParser {
             positional_args: new_positional_args,
             flag_args: new_flag_args,
             arg_name_mapping: new_arg_name_mapping,
@@ -580,7 +580,7 @@ impl ArgumentParser {
             help_arg_added: self.help_arg_added,
             version_arg_added: self.version_arg_added,
         };
-        self.store_argument(new_argument, dest)
+        new_parser.store_argument(new_argument, dest)
     }
 
     pub fn arguments(&self) -> Vec<&Argument> {
