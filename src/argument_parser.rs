@@ -47,7 +47,7 @@ impl PrefixCharOutcomes {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct PrefixChars(HashSet<char>);
 
 impl PrefixChars {
@@ -112,7 +112,7 @@ impl Default for PrefixChars {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum ConflictHandlingStrategy {
     Error,
     Override, // instead of resolve
@@ -370,7 +370,7 @@ impl ArgumentParser {
     }
 
     fn store_argument(
-        mut self,
+        &self,
         argument: Argument,
         dest: Option<&str>,
     ) -> Result<ArgumentParser, ArgumentError> {
@@ -396,22 +396,26 @@ impl ArgumentParser {
             _ => Ok((self.help_arg_added, self.version_arg_added)),
         }?;
 
+        let mut new_flag_args = self.flag_args.clone();
+        let mut new_positional_args = self.positional_args.clone();
         let new_arg_location = if argument.name().is_flag_argument() {
-            self.flag_args.push(argument.clone());
-            Ok((self.flag_args.len() - 1, true))
+            new_flag_args.push(argument.clone());
+            Ok((new_flag_args.len() - 1, true))
         } else {
-            self.positional_args.push(argument.clone());
-            Ok((self.positional_args.len() - 1, false))
+            new_positional_args.push(argument.clone());
+            Ok((new_positional_args.len() - 1, false))
         }?;
 
+
+        let mut new_arg_name_mapping = self.arg_name_mapping.clone();
         for flag in argument.flag_values() {
-            self.arg_name_mapping.insert(flag, new_arg_location);
+            new_arg_name_mapping.insert(flag, new_arg_location);
         }
 
-        self.allow_abbrev_mapping = self.allow_abbrev_mapping.map(|x| {
+        let new_allow_abbrev_mapping = self.allow_abbrev_mapping.as_ref().map(|x| {
             let mut new_x = x.clone();
             match argument.name() {
-                ArgumentName::Positional(_) => x, // applies only to options
+                ArgumentName::Positional(_) => x.clone(), // applies only to options
                 ArgumentName::Flag { full, abbrev } => {
                     for argument in full {
                         if argument.len() > 1 {
@@ -446,28 +450,27 @@ impl ArgumentParser {
                 None,
             )
             .unwrap();
-            if !self
-                .arg_name_mapping
+            if !new_arg_name_mapping
                 .contains_key(new_dest_argument.fetch_value())
             {
-                self.flag_args.push(new_dest_argument.clone());
-                self.arg_name_mapping.insert(
+                new_flag_args.push(new_dest_argument.clone());
+                new_arg_name_mapping.insert(
                     new_dest_argument.fetch_value().clone(),
-                    (self.flag_args.len() - 1, true),
+                    (new_flag_args.len() - 1, true),
                 );
             }
         };
 
         Ok(ArgumentParser {
-            positional_args: self.positional_args,
-            flag_args: self.flag_args,
-            arg_name_mapping: self.arg_name_mapping,
-            desp: self.desp,
-            prog: self.prog,
-            epilog: self.epilog,
-            prefix_chars: self.prefix_chars,
-            argument_default: self.argument_default,
-            allow_abbrev_mapping: self.allow_abbrev_mapping, // TODO correct default
+            positional_args: new_positional_args,
+            flag_args: new_flag_args,
+            arg_name_mapping: new_arg_name_mapping,
+            desp: self.desp.clone(),
+            prog: self.prog.clone(),
+            epilog: self.epilog.clone(),
+            prefix_chars: self.prefix_chars.clone(),
+            argument_default: self.argument_default.clone(),
+            allow_abbrev_mapping: new_allow_abbrev_mapping, // TODO correct default
             conflict_handler: self.conflict_handler,
             help_arg_added: help_arg_added,
             version_arg_added: version_arg_added,
@@ -525,7 +528,7 @@ impl ArgumentParser {
     }
 
     pub fn add_argument<T: ToString>(
-        mut self,
+        &self,
         name: Vec<&str>,
         action: Option<&str>,
         nargs: Option<NArgs>,
@@ -541,13 +544,14 @@ impl ArgumentParser {
         let arg_name: ArgumentName = ArgumentName::new(name, &self.prefix_chars)?.clone();
         let (new_flag_args, new_positional_args) = self.check_for_duplicate_arg_names(&arg_name)?;
         // this shouldn't happen often
-        if &new_flag_args.len() < &self.flag_args.len()
+        let (new_arg_name_mapping, new_allow_abbrev_mapping)=if &new_flag_args.len() < &self.flag_args.len()
             || &new_positional_args.len() < &self.positional_args.len()
         {
-            (self.arg_name_mapping, self.allow_abbrev_mapping) =
+             
                 self.init_arg_idx_mappings(&new_flag_args, &new_positional_args)
+        } else {
+            (self.arg_name_mapping.clone(), self.allow_abbrev_mapping.clone())
         };
-        (self.flag_args, self.positional_args) = (new_flag_args, new_positional_args);
         let constant = constant.map(|x| x.into_iter().map(|y| y.to_string()).collect());
         let default = default.map(|x| x.into_iter().map(|y| y.to_string()).collect());
         let choices = choices.map(|inner| {
@@ -561,6 +565,21 @@ impl ArgumentParser {
             arg_name, action, nargs, constant, default, choices, required, help, metavar, dest,
             version,
         )?;
+
+        let new_parser =       ArgumentParser {
+            positional_args: new_positional_args,
+            flag_args: new_flag_args,
+            arg_name_mapping: new_arg_name_mapping,
+            desp: self.desp.clone(),
+            prog: self.prog.clone(),
+            epilog: self.epilog.clone(),
+            prefix_chars: self.prefix_chars.clone(),
+            argument_default: self.argument_default.clone(),
+            allow_abbrev_mapping: new_allow_abbrev_mapping, // TODO correct default
+            conflict_handler: self.conflict_handler,
+            help_arg_added: self.help_arg_added,
+            version_arg_added: self.version_arg_added,
+        };
         self.store_argument(new_argument, dest)
     }
 
