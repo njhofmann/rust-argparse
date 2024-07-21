@@ -53,9 +53,12 @@ pub struct PrefixChars((HashSet<char>, char));
 impl PrefixChars {
     pub fn new(chars: Option<&str>) -> Result<PrefixChars, ArgumentError> {
         match chars {
-            None => Ok(PrefixChars((HashSet::from_iter::<Vec<char>>(vec!['-']), '-'))),
+            None => Ok(PrefixChars((
+                HashSet::from_iter::<Vec<char>>(vec!['-']),
+                '-',
+            ))),
             Some(x) => {
-                let as_string =x.to_string();
+                let as_string = x.to_string();
                 let mut chars = as_string.chars();
                 let temp = HashSet::from_iter(chars.clone().into_iter());
                 if temp.is_empty() {
@@ -92,7 +95,7 @@ impl PrefixChars {
             let mut chars = string.chars();
             let a = chars.next().unwrap();
             let b = chars.next().unwrap();
-            if !self.0.0.contains(&a) {
+            if !self.0 .0.contains(&a) {
                 PrefixCharOutcomes::NONE
             } else if a == b {
                 if string.len() > 2 {
@@ -111,12 +114,15 @@ impl PrefixChars {
         match argument.name() {
             ArgumentName::Positional(x) => x.clone(),
             ArgumentName::Flag { full, abbrev } => {
-                let default = self.0.1.to_string();
+                let default = self.0 .1.to_string();
                 if let Some(x) = abbrev.first() {
                     default + x.as_str()
                 } else {
-                    (default.clone() + default.clone().as_str() + full.first().expect("this should have a value").as_str())
-                }.to_string()
+                    (default.clone()
+                        + default.clone().as_str()
+                        + full.first().expect("this should have a value").as_str())
+                }
+                .to_string()
             }
         }
     }
@@ -640,9 +646,7 @@ impl ArgumentParser {
                     .is_flag()
             {
                 let cur_raw_arg = match self.prefix_chars.parse_string(&cur_raw_arg.unwrap()) {
-                    PrefixCharOutcomes::LONG => {
-                        cur_raw_arg.unwrap()[FLAG_ARG_LEN..].to_string()
-                    },
+                    PrefixCharOutcomes::LONG => cur_raw_arg.unwrap()[FLAG_ARG_LEN..].to_string(),
                     PrefixCharOutcomes::ABBREV => {
                         cur_raw_arg.unwrap()[FLAG_ARG_ABBREV_LEN..].to_string()
                     }
@@ -1012,7 +1016,7 @@ impl ArgumentParser {
             }
 
             for posn_arg in &self.positional_args {
-               builder += posn_arg.display_name().as_str();
+                builder += posn_arg.display_name().as_str();
             }
 
             builder
@@ -1038,7 +1042,7 @@ mod test {
     fn display_no_desp() {
         assert_eq!(
             ArgumentParser::new(
-                Some( "only prog"),
+                Some("only prog"),
                 None,
                 None,
                 None,
@@ -1059,7 +1063,7 @@ mod test {
     fn display_with_desp() {
         assert_eq!(
             ArgumentParser::new(
-                Some ("program"),
+                Some("program"),
                 None,
                 Some("this parses arguments"),
                 None,
@@ -1088,8 +1092,10 @@ mod test {
             None,
             None,
             None,
-            None
-        ).unwrap().add_argument::<&str>(
+            None,
+        )
+        .unwrap()
+        .add_argument::<&str>(
             vec!["-g"],
             None,
             None,
@@ -1100,8 +1106,10 @@ mod test {
             None,
             None,
             None,
-            None
-        ).unwrap().add_argument::<&str>(
+            None,
+        )
+        .unwrap()
+        .add_argument::<&str>(
             vec!["--bug", "-b"],
             None,
             None,
@@ -1112,8 +1120,9 @@ mod test {
             None,
             None,
             None,
-            None
-        ).unwrap()
+            None,
+        )
+        .unwrap()
         .add_argument::<&str>(
             vec!["--bag"],
             None,
@@ -1125,8 +1134,9 @@ mod test {
             None,
             None,
             None,
-            None
-        ).unwrap()
+            None,
+        )
+        .unwrap()
         .add_argument::<&str>(
             vec!["goo"],
             None,
@@ -1138,8 +1148,9 @@ mod test {
             None,
             None,
             None,
-            None
-        ).unwrap();
+            None,
+        )
+        .unwrap();
         assert_eq!(
             parser.format_usage(),
             "test_parser [-h] [-g] [-b] [--bag] goo".to_string()

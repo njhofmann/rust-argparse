@@ -131,7 +131,7 @@ mod actions {
 
         #[test]
         fn allow_abbrev_argument_override_enabled() {
-            let mut parser =  ArgumentParser::new(
+            let mut parser = ArgumentParser::new(
                 None,
                 None,
                 None,
@@ -174,30 +174,45 @@ mod actions {
             .unwrap();
             assert_eq!(
                 parser
-                    .parse_args(Some(vec!["--beast".to_string(), "test".to_string(), "--beam".to_string(), "test".to_string()]))
-                    .unwrap().get_one_value::<String>("beast").unwrap(),
+                    .parse_args(Some(vec![
+                        "--beast".to_string(),
+                        "test".to_string(),
+                        "--beam".to_string(),
+                        "test".to_string()
+                    ]))
+                    .unwrap()
+                    .get_one_value::<String>("beast")
+                    .unwrap(),
                 "test".to_string()
             );
-            parser = parser           .add_argument::<&str>(
-                vec!["--beast", "-b"],
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
-        assert_eq!(
-            parser
-                .parse_args(Some(vec!["--beast".to_string(), "test".to_string(), "--beam".to_string(), "test".to_string()]))
-                .unwrap().get_one_value::<String>("beast").unwrap(),
-            "test".to_string()
-        );
+            parser = parser
+                .add_argument::<&str>(
+                    vec!["--beast", "-b"],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+            assert_eq!(
+                parser
+                    .parse_args(Some(vec![
+                        "--beast".to_string(),
+                        "test".to_string(),
+                        "--beam".to_string(),
+                        "test".to_string()
+                    ]))
+                    .unwrap()
+                    .get_one_value::<String>("beast")
+                    .unwrap(),
+                "test".to_string()
+            );
         }
 
         #[test]
