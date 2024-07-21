@@ -487,7 +487,7 @@ impl Argument {
         &self.action
     }
 
-    fn display_name(&self) -> String {
+    pub fn display_name(&self) -> String {
         self.metavar
             .as_ref()
             .map_or_else(|| self.name().to_string().clone(), |x| x.clone())

@@ -1,8 +1,11 @@
 - argparser print methods
     - usage
-    - epilog
-- test error cases
-    - actions for posn args
+        - default prog
+        - fetch w/ nargs
+- long_option=single_value
+- -[short_option]single_value
+- support actions for posn args
+- missing tests
     - different actions w/ default, required, nargs, flag vs posn arg,
     - handle required, default, and actions
     - invalid actions
@@ -10,8 +13,7 @@
     - give parent parser(s)
     - parent parsers with conflict
     - parent parsers with conflict resolution
-- -long_option=single_value
-- -[short_option]single_value
+- arg parser + arg builder methods
 - combine short options
     test -vvv count
 - impl parser default
@@ -19,10 +21,12 @@
 - misc behavior
     - For positional arguments with nargs equal to ? or *, the default value is used when no command-line argument was present:
         - is default required bere
-    - Providing default=argparse.SUPPRESS causes no attribute to be added if the command-line argument was not present:
+    - Providing default=argparse.SUPPRESS causes no attribute to be added if the command-line argument was not present
 - add_subparser
 - add_mutually_exclusive_group
 - add_argument_group
+- custom actions
+- parse_known_args
 - setup proper crate lib structure
     - integration tests run w/ cargo test
      check library release requirements
@@ -36,11 +40,6 @@
         - mixed gives error
     - how to release library guide
 
-- build arg parser desp
-- argument & parser builder methods
-    - with_default, with_const, etc.
-- how to test help & versions  
-
 - will not support / deliberatly not supported
     - posn arguments don't support required
     - convert_arg_line_to_args as it required manual overriding in python
@@ -50,7 +49,7 @@
     - default only supported for action='store'?
         - doesn't interface with type system
     - won't support specific positional argument splitting 
-    - positional argument only supported for action?
+    - intermixed args
 
 - note
     - can't have non-required positional arguments
