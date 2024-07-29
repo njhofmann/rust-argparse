@@ -99,6 +99,13 @@ impl ArgumentName {
         }
     }
 
+    pub fn is_abbrev_argument(&self) -> bool {
+        match self {
+            ArgumentName::Flag { full, abbrev } if full.is_empty() && !abbrev.is_empty() => true,
+            _ => false,
+        }
+    }
+
     pub fn overlap(&self, other: &ArgumentName) -> Vec<String> {
         match (self, other) {
             (ArgumentName::Positional(x), ArgumentName::Positional(y)) => {
@@ -169,6 +176,7 @@ impl Display for ArgumentName {
         write!(f, "{}", builder)
     }
 }
+
 impl Hash for ArgumentName {
     fn hash<H: Hasher>(&self, state: &mut H) {
         // TODO do referenes wrk here

@@ -4,7 +4,7 @@ mod actions {
     use py_arg_parse::parse_result::RetrievalError;
 
     mod store {
-        use py_arg_parse::{argument_error::ArgumentError, argument_parser::ParserError};
+        use py_arg_parse::argument_parser::ParserError;
 
         use super::*;
 

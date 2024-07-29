@@ -360,7 +360,7 @@ mod ordering {
     #[test]
     fn at_least_one_posn_then_exact_posn() {
         let namespace = init_test_arg_parser(
-            vec![(NArgs::AtLeastOne, false), (NArgs::Exact(1), false)],
+            vec![(NArgs::OneOrMore, false), (NArgs::Exact(1), false)],
             vec!["a", "b", "c", "d", "e"],
         );
         assert_eq!(
@@ -378,7 +378,7 @@ mod ordering {
     #[test]
     fn at_least_one_posn_then_at_least_one_posn_posn() {
         let namespace = init_test_arg_parser(
-            vec![(NArgs::AtLeastOne, false), (NArgs::AtLeastOne, false)],
+            vec![(NArgs::OneOrMore, false), (NArgs::OneOrMore, false)],
             vec!["a", "b", "c", "d", "e"],
         );
         assert_eq!(
@@ -433,7 +433,7 @@ mod ordering {
     #[test]
     fn exact_posn_at_least_one_posn() {
         let namespace = init_test_arg_parser(
-            vec![(NArgs::Exact(1), false), (NArgs::AtLeastOne, false)],
+            vec![(NArgs::Exact(1), false), (NArgs::OneOrMore, false)],
             vec!["a", "b", "c", "d", "e"],
         );
         assert_eq!(namespace.get::<String>("0").unwrap(), vec!["a".to_string()]);
@@ -453,7 +453,7 @@ mod ordering {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::Exact(1), false),
-                (NArgs::AtLeastOne, false),
+                (NArgs::OneOrMore, false),
                 (NArgs::Exact(1), false),
             ],
             vec!["a", "b", "c", "d", "e"],
@@ -471,8 +471,8 @@ mod ordering {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::Exact(1), false),
-                (NArgs::AtLeastOne, false),
-                (NArgs::AtLeastOne, false),
+                (NArgs::OneOrMore, false),
+                (NArgs::OneOrMore, false),
             ],
             vec!["a", "b", "c", "d", "e"],
         );
@@ -490,7 +490,7 @@ mod ordering {
             vec![
                 (NArgs::Exact(2), false),
                 (NArgs::ZeroOrOne, false),
-                (NArgs::AtLeastOne, false),
+                (NArgs::OneOrMore, false),
             ],
             vec!["a", "b", "c", "d", "e"],
         );

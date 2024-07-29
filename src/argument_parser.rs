@@ -110,7 +110,7 @@ impl PrefixChars {
         }
     }
 
-    fn display_arg_name(&self, argument: &Argument) -> String {
+    pub fn display_arg_name(&self, argument: &Argument) -> String {
         match argument.name() {
             ArgumentName::Positional(x) => x.clone(),
             ArgumentName::Flag { full, abbrev } => {
@@ -118,9 +118,9 @@ impl PrefixChars {
                 if let Some(x) = abbrev.first() {
                     default + x.as_str()
                 } else {
-                    (default.clone()
+                    default.clone()
                         + default.clone().as_str()
-                        + full.first().expect("this should have a value").as_str())
+                        + full.first().expect("this should have a value").as_str()
                 }
                 .to_string()
             }
@@ -725,7 +725,7 @@ impl ArgumentParser {
                     }
                     Some(idx)
                 }
-                NArgs::AtLeastOne => {
+                NArgs::OneOrMore => {
                     idx += 1;
                     if end_or_new_flag_arg(&idx) {
                         found_value_count = 0;
@@ -769,7 +769,7 @@ impl ArgumentParser {
                         - match parsed_argument.nargs() {
                             NArgs::Exact(n) => *n as i32,
                             NArgs::ZeroOrOne | NArgs::AnyNumber => 0,
-                            NArgs::AtLeastOne => 1,
+                            NArgs::OneOrMore => 1,
                         };
 
                     debug_assert!(n_excess_args >= 0);
@@ -991,7 +991,7 @@ impl ArgumentParser {
     }
 
     pub fn print_usage(&self) {
-        todo!()
+        println!("{}", self.format_usage())
     }
 
     pub fn print_help(&self) {
@@ -1003,20 +1003,13 @@ impl ArgumentParser {
             let mut builder = self.prog.clone();
 
             for flag_arg in &self.flag_args {
-                builder += " [";
-                builder += self.prefix_chars.display_arg_name(flag_arg).as_str();
-                if let Some(dest) = flag_arg.dest() {
-                    builder += dest.to_uppercase().as_str();
-                }
-                builder += "]";
-            }
-
-            if !self.positional_args.is_empty() {
                 builder += " ";
+                builder += flag_arg.usage_display(&self.prefix_chars).as_str();
             }
 
             for posn_arg in &self.positional_args {
-                builder += posn_arg.display_name().as_str();
+                builder += " ";
+                builder += posn_arg.usage_display(&self.prefix_chars).as_str();
             }
 
             builder
@@ -1098,7 +1091,7 @@ mod test {
         .add_argument::<&str>(
             vec!["-g"],
             None,
-            None,
+            Some(NArgs::Exact(2)),
             None,
             None,
             None,
@@ -1112,7 +1105,7 @@ mod test {
         .add_argument::<&str>(
             vec!["--bug", "-b"],
             None,
-            None,
+            Some(NArgs::AnyNumber),
             None,
             None,
             None,
@@ -1126,7 +1119,7 @@ mod test {
         .add_argument::<&str>(
             vec!["--bag"],
             None,
-            None,
+            Some(NArgs::ZeroOrOne),
             None,
             None,
             None,
@@ -1140,7 +1133,7 @@ mod test {
         .add_argument::<&str>(
             vec!["goo"],
             None,
-            None,
+            Some(NArgs::OneOrMore),
             None,
             None,
             None,
@@ -1150,10 +1143,80 @@ mod test {
             None,
             None,
         )
+        .unwrap()
+        .add_argument::<&str>(
+            vec!["--hyt"],
+            None,
+            Some(NArgs::OneOrMore),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .add_argument::<&str>(
+            vec!["boo"],
+            None,
+            Some(NArgs::ZeroOrOne),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .add_argument::<&str>(
+            vec!["gaf"],
+            None,
+            Some(NArgs::Exact(2)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .add_argument::<&str>(
+            vec!["opy"],
+            None,
+            Some(NArgs::AnyNumber),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .add_argument::<&str>(
+            vec!["--got"],
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some("tog"),
+            None,
+            None,
+        )
         .unwrap();
         assert_eq!(
             parser.format_usage(),
-            "test_parser [-h] [-g] [-b] [--bag] goo".to_string()
+            "test_parser [-h] [-g G G] [-b [BUG ...]] [--bag [BAG]] [--hyt HYT [HYT ...]] [--got tog] goo [goo ...] [boo] gaf gaf [opy ...]".to_string()
         )
     }
 
@@ -1375,7 +1438,7 @@ mod test {
 
     #[test]
     fn duplicate_positional_argument_names_override() {
-        let mut parser = ArgumentParser::new(
+        let parser = ArgumentParser::new(
             None,
             None,
             None,
@@ -1672,7 +1735,7 @@ mod test {
 
     #[test]
     fn add_duplicate_argument_name_with_overlap_error() {
-        let mut parser = ArgumentParser::new(
+        let parser = ArgumentParser::new(
             None,
             None,
             None,

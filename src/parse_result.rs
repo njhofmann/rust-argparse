@@ -453,7 +453,7 @@ mod test {
         #[test]
         #[should_panic]
         fn failed_index() {
-            &(setup_input()["foooo"]);
+            let _ = &(setup_input()["foooo"]);
         }
 
         #[test]

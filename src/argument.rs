@@ -1,4 +1,5 @@
 use crate::argument_error::ArgumentError;
+use crate::argument_parser::PrefixChars;
 use crate::InvalidChoice;
 use crate::{argument_name::ArgumentName, string_vec_to_string};
 use std::fmt::format;
@@ -131,9 +132,9 @@ impl Display for Action {
 #[derive(Clone, Debug, Copy, PartialEq, Eq)]
 pub enum NArgs {
     Exact(usize),
-    ZeroOrOne,  // ?
-    AnyNumber,  // *
-    AtLeastOne, // +
+    ZeroOrOne, // ?
+    AnyNumber, // *
+    OneOrMore, // +
 }
 
 impl NArgs {
@@ -142,14 +143,14 @@ impl NArgs {
             NArgs::Exact(n) => n == &x,
             NArgs::ZeroOrOne => x < 2,
             NArgs::AnyNumber => true,
-            NArgs::AtLeastOne => x > 0,
+            NArgs::OneOrMore => x > 0,
         }
     }
 
     pub fn can_be_zero(&self) -> bool {
         match self {
             NArgs::Exact(x) if x != &0 => false,
-            NArgs::AtLeastOne => false,
+            NArgs::OneOrMore => false,
             _ => true,
         }
     }
@@ -157,7 +158,7 @@ impl NArgs {
     pub fn is_variable(&self) -> bool {
         // variable means no bound on size
         match self {
-            NArgs::AnyNumber | NArgs::AtLeastOne => true,
+            NArgs::AnyNumber | NArgs::OneOrMore => true,
             _ => false,
         }
     }
@@ -172,7 +173,7 @@ impl Display for NArgs {
                 NArgs::Exact(n) => n.to_string(),
                 NArgs::ZeroOrOne => "zero or one ('?')".to_string(),
                 NArgs::AnyNumber => "any number ('*')".to_string(),
-                NArgs::AtLeastOne => "at least one ('+')".to_string(),
+                NArgs::OneOrMore => "at least one ('+')".to_string(),
             }
         )
     }
@@ -490,7 +491,7 @@ impl Argument {
     pub fn display_name(&self) -> String {
         self.metavar
             .as_ref()
-            .map_or_else(|| self.name().to_string().clone(), |x| x.clone())
+            .map_or_else(|| self.fetch_value().to_string().clone(), |x| x.clone())
     }
 
     pub fn flag_values(&self) -> Vec<String> {
@@ -528,6 +529,69 @@ impl Argument {
             },
             (_, Some(d)) => &d,
         }
+    }
+
+    pub fn usage_display(&self, prefix_chars: &PrefixChars) -> String {
+        let mut builder = "".to_string();
+
+        if self.name().is_flag_argument() {
+            builder += "[";
+        }
+
+        let binding = prefix_chars.display_arg_name(self).to_string();
+        let binding2 = self.display_name();
+        builder += match (self.name.is_flag_argument(), self.nargs()) {
+            (false, NArgs::ZeroOrOne) | (false, NArgs::AnyNumber) | (false, NArgs::Exact(_)) => "",
+            (true, _) => &binding,
+            _ => &binding2,
+        };
+
+        let fetch_value_temp = match (self.name.is_flag_argument(), self.nargs()) {
+            (false, NArgs::ZeroOrOne) => "".to_string(),
+            (true, _) if self.metavar.is_none() => self.display_name().to_uppercase(),
+            _ => self.display_name().to_string(),
+        };
+        let fetch_value = fetch_value_temp.as_str();
+
+        let zero_or_one_inner_fetch_value = match self.name.is_flag_argument() {
+            true => self.display_name().to_uppercase(),
+            _ => self.display_name().to_string(),
+        };
+
+        let vals = match self.nargs() {
+            NArgs::Exact(x) => {
+                let mut builder = "".to_string();
+                for i in 0..*x as i32 {
+                    if i > 0 {
+                        builder += " ";
+                    }
+                    builder += fetch_value;
+                }
+                builder.to_string()
+            }
+            NArgs::ZeroOrOne => "[".to_string() + zero_or_one_inner_fetch_value.as_str() + "]",
+            NArgs::AnyNumber => "[".to_string() + fetch_value + " ...]",
+            NArgs::OneOrMore => {
+                (if self.name.is_flag_argument() {
+                    fetch_value.to_string() + " "
+                } else {
+                    "".to_string()
+                }) + "["
+                    + fetch_value
+                    + " ...]"
+            }
+        };
+
+        if !builder.is_empty() && !vals.is_empty() {
+            builder += " ";
+        }
+
+        builder += vals.as_str();
+        if self.name().is_flag_argument() {
+            builder += "]";
+        }
+
+        builder
     }
 }
 

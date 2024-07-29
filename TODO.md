@@ -1,32 +1,35 @@
-- argparser print methods
-    - usage
-        - default prog
-        - fetch w/ nargs
-- long_option=single_value
-- -[short_option]single_value
-- support actions for posn args
-- missing tests
-    - different actions w/ default, required, nargs, flag vs posn arg,
-    - handle required, default, and actions
-    - invalid actions
+- supported raw arg work
+    - long_option=single_value
+    - -[short_option]single_value
+    - combine short options
+        test -vvv count
+- misc behavior    
+    - dest can't applied for positional
+    - non zero nargs:exact if store
+    - For positional arguments with nargs equal to ? or *, the default value is used when no command-line argument was present:
+        - is default required bere
+    - Providing default=argparse.SUPPRESS causes no attribute to be added if the command-line argument was not present
+    - parse_args takes existing namespace
+    - impl parser default
+        - error out if can't String --> T support, or just warning
+    - parse_known_args
+    - ArgumentParser.set_defaults
+- test improvement
+    - remove setup from retrieval 
+    - split usage display, coverage w/ more metavar
+- posn arg work
+    - mult posn arguments w same dest / name
+    - support actions for posn args
 - parent parsers
     - give parent parser(s)
     - parent parsers with conflict
     - parent parsers with conflict resolution
 - arg parser + arg builder methods
-- combine short options
-    test -vvv count
-- impl parser default
-    - error out if can't String --> T support, or just warning
-- misc behavior
-    - For positional arguments with nargs equal to ? or *, the default value is used when no command-line argument was present:
-        - is default required bere
-    - Providing default=argparse.SUPPRESS causes no attribute to be added if the command-line argument was not present
-- add_subparser
-- add_mutually_exclusive_group
-- add_argument_group
-- custom actions
-- parse_known_args
+- major work items
+    - add_subparser
+    - add_mutually_exclusive_group
+    - add_argument_group
+    - custom actions
 - setup proper crate lib structure
     - integration tests run w/ cargo test
      check library release requirements
