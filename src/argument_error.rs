@@ -1,3 +1,5 @@
+use std::error;
+
 use thiserror::Error;
 
 use crate::{argument::ActionError, InvalidChoice};
@@ -52,4 +54,6 @@ pub enum ArgumentError {
     RequiredGivenToUnsupportedAction,
     #[error("{0} is not a supported strategy for resolving conflicting arguments - error and override / resolve are supported")]
     UnsupportedConflictHandlingStrategy(String),
+    #[error("destination given for positional argument, destination is already set based off postional argument name")]
+    DestinationGivenForPositionalArgument,
 }

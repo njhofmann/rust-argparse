@@ -306,6 +306,8 @@ impl Argument {
 
         if !name.is_flag_argument() && required.is_some() {
             return Err(ArgumentError::RequiredMarkedForPositionalArgument);
+        } else if !name.is_flag_argument() && dest.is_some() {
+            return Err(ArgumentError::DestinationGivenForPositionalArgument);
         }
 
         let required = match (&action, required) {
@@ -703,6 +705,27 @@ mod test {
                 metavar: None,
                 dest: None
             },
+        )
+    }
+
+    #[test]
+    fn postional_argument_given_destination() {
+        assert_eq!(
+            Argument::new(
+                ArgumentName::Positional("name".to_string()),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("dest"),
+                None
+            )
+            .unwrap_err(),
+            ArgumentError::DestinationGivenForPositionalArgument
         )
     }
 

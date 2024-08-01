@@ -1,10 +1,10 @@
 - supported raw arg work
     - long_option=single_value
     - -[short_option]single_value
+    - pseudo-argument '--' which tells parse_args() that everything after that is a positional argument:
     - combine short options
         test -vvv count
 - misc behavior    
-    - dest can't applied for positional
     - non zero nargs:exact if store
     - For positional arguments with nargs equal to ? or *, the default value is used when no command-line argument was present:
         - is default required bere
