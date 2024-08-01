@@ -5,7 +5,6 @@
     - combine short options
         test -vvv count
 - misc behavior    
-    - non zero nargs:exact if store
     - For positional arguments with nargs equal to ? or *, the default value is used when no command-line argument was present:
         - is default required bere
     - Providing default=argparse.SUPPRESS causes no attribute to be added if the command-line argument was not present

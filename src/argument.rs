@@ -37,6 +37,8 @@ pub enum ActionError {
     PositionalArgumentGivenNonStoreAction(String),
     #[error("{0} is not a supported Action")]
     InvalidAction(String),
+    #[error("can't have exactly zero arguments for store action; try store_const, store_true, or store_false actions")]
+    ZeroExactNArgForStoreAction,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -326,6 +328,9 @@ impl Argument {
 
         let nargs_given = nargs.is_some();
         let nargs = match (&action, nargs) {
+            (Action::Store(_), Some(NArgs::Exact(0))) => Err(ArgumentError::ActionError(
+                ActionError::ZeroExactNArgForStoreAction,
+            )),
             (Action::StoreConst(_), Some(_))
             | (Action::AppendConst(_), Some(_))
             | (Action::Version(_), Some(_))
@@ -602,7 +607,7 @@ mod test {
     use std::vec;
 
     use crate::{
-        argument::{Action, Argument, ArgumentError, Choices, NArgs},
+        argument::{Action, ActionError, Argument, ArgumentError, Choices, NArgs},
         argument_name::ArgumentName,
         argument_parser::PrefixChars,
         InvalidChoice,
@@ -705,6 +710,27 @@ mod test {
                 metavar: None,
                 dest: None
             },
+        )
+    }
+
+    #[test]
+    fn store_argument_with_zeroexact_nargs() {
+        assert_eq!(
+            Argument::new(
+                ArgumentName::Positional("foo".to_string()),
+                None,
+                Some(NArgs::Exact(0)),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None
+            )
+            .unwrap_err(),
+            ArgumentError::ActionError(ActionError::ZeroExactNArgForStoreAction)
         )
     }
 
