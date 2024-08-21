@@ -913,9 +913,20 @@ impl ArgumentParser {
                         argument
                             .arg_value_in_choices(&arg_val_vec)
                             .map_err(ParserError::InvalidChoice)?;
-                        Ok(Action::Store(arg_val_vec))
+
+                        let arg_val = if (argument.nargs() == &NArgs::AnyNumber
+                            || argument.nargs() == &NArgs::ZeroOrOne)
+                            && arg_val_vec.is_empty()
+                            && argument.default().is_some()
+                        {
+                            argument.default().as_ref().unwrap().clone()
+                        } else {
+                            arg_val_vec
+                        };
+
+                        Ok(Action::Store(arg_val))
                     }
-                    _ => panic!("given unsupported action of positional argument"),
+                    _ => panic!("given unsupported action tp positional argument"),
                 }?)
             };
 

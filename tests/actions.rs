@@ -4,9 +4,74 @@ mod actions {
     use py_arg_parse::parse_result::RetrievalError;
 
     mod store {
-        use py_arg_parse::argument_parser::ParserError;
+        use py_arg_parse::{argument::NArgs, argument_parser::ParserError};
 
         use super::*;
+
+        #[test]
+        fn any_number_posn_arg_and_zero_or_one_posn_arg_no_values_have_default() {
+            let namespace = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["a"],
+                    None,
+                    Some(NArgs::AnyNumber),
+                    None,
+                    Some(vec!["a"]),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["b"],
+                    None,
+                    Some(NArgs::AnyNumber),
+                    None,
+                    Some(vec!["b"]),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["c"],
+                    None,
+                    Some(NArgs::ZeroOrOne),
+                    None,
+                    Some(vec!["c"]),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .parse_args(Some(vec![
+                    "d".to_string(),
+                    "e".to_string(),
+                    "f".to_string(),
+                ]))
+                .unwrap();
+            assert_eq!(
+                namespace.get_three_value::<String>("a").unwrap(),
+                ("d".to_string(), "e".to_string(), "f".to_string())
+            );
+            assert_eq!(
+                namespace.get_one_value::<String>("b").unwrap(),
+                "b".to_string()
+            );
+            assert_eq!(
+                namespace.get_one_value::<String>("c").unwrap(),
+                ("c".to_string())
+            )
+        }
 
         #[test]
         fn store() {

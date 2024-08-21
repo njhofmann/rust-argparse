@@ -5,10 +5,9 @@
     - combine short options
         test -vvv count
 - misc behavior    
-    - For positional arguments with nargs equal to ? or *, the default value is used when no command-line argument was present:
-        - is default required bere
     - Providing default=argparse.SUPPRESS causes no attribute to be added if the command-line argument was not present
     - parse_args takes existing namespace
+        - is this worth adding
     - impl parser default
         - error out if can't String --> T support, or just warning
     - parse_known_args
