@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{hash_map, HashMap, HashSet},
     env,
     fmt::Display,
 };
@@ -620,13 +620,19 @@ impl ArgumentParser {
         arguments
     }
 
-    pub fn parse_args(&self, raw_args: Option<Vec<String>>) -> Result<Namespace, ParserError> {
+    fn parse_raw_args(
+        &self,
+        raw_args: Option<Vec<String>>,
+        keep_or_error_unknown_args: bool,
+    ) -> Result<(Namespace, Vec<String>), ParserError> {
+        let mut unknown_args: Vec<String> = Vec::new(); // only used if keep_or_error_unknown_args is true
         let raw_args = raw_args.unwrap_or(env::args().collect());
         let mut processed_arguments: HashSet<Argument> = HashSet::new();
         let mut idx = 0;
         let mut cur_posn_argument_idx: Option<usize> = self.positional_args.first().map(|_| 0);
         let mut processed_posn_args: Vec<Argument> = Vec::new();
         let mut arg_and_raw_arg_range: Vec<(Argument, (usize, usize))> = Vec::new();
+        let mut var_posn_found = false;
         // TODO This doesn't need to be option, remove this
         let mut last_arg_group_idx: Option<usize> = None; // tracks indices in arg_and_raw_arg_range
                                                           // contine to parse so long as posn arguments are left or raw args haven't been looked at (may have flags)
@@ -645,7 +651,7 @@ impl ArgumentParser {
                     .parse_string(cur_raw_arg.unwrap())
                     .is_flag()
             {
-                let cur_raw_arg = match self.prefix_chars.parse_string(&cur_raw_arg.unwrap()) {
+                let flag_raw_arg = match self.prefix_chars.parse_string(&cur_raw_arg.unwrap()) {
                     PrefixCharOutcomes::LONG => cur_raw_arg.unwrap()[FLAG_ARG_LEN..].to_string(),
                     PrefixCharOutcomes::ABBREV => {
                         cur_raw_arg.unwrap()[FLAG_ARG_ABBREV_LEN..].to_string()
@@ -653,7 +659,18 @@ impl ArgumentParser {
                     _ => panic!("found non-flag argument"),
                 };
 
-                let mut found_arg = self.get_flag_argument(&cur_raw_arg)?;
+                let found_arg = self.get_flag_argument(&flag_raw_arg);
+
+                if keep_or_error_unknown_args
+                    && found_arg == Err(ParserError::InvalidFlagArgument(flag_raw_arg.clone()))
+                {
+                    unknown_args.push(cur_raw_arg.unwrap().to_string());
+                    last_arg_group_idx = Some(last_arg_group_idx.map_or(0, |x| x + 1)); // should this be here
+                    idx += 1; // move past flag
+                    continue;
+                }
+
+                let mut found_arg = found_arg?;
                 if processed_arguments.contains(&found_arg) {
                     found_arg = processed_arguments.get(&found_arg).unwrap().clone();
                 }
@@ -662,10 +679,16 @@ impl ArgumentParser {
                 idx += 1; // move past flag
                 Ok(found_arg.clone())
             } else if cur_posn_argument_idx.is_none() {
-                Err(ParserError::UnprocessedRawArguments(string_vec_to_string(
-                    &raw_args[idx..].to_vec(),
-                    false,
-                )))
+                let unprocessed_args = &raw_args[idx..].to_vec();
+                if keep_or_error_unknown_args {
+                    unknown_args.append(&mut unprocessed_args.clone());
+                    break;
+                } else {
+                    return Err(ParserError::UnprocessedRawArguments(string_vec_to_string(
+                        &raw_args[idx..].to_vec(),
+                        false,
+                    )));
+                }
             } else {
                 if last_arg_group_idx.is_none() {
                     last_arg_group_idx = Some(last_arg_group_idx.map_or(0, |x| x + 1))
@@ -720,8 +743,18 @@ impl ArgumentParser {
                     Some(idx)
                 }
                 NArgs::AnyNumber => {
-                    while !end_or_new_flag_arg(&idx) {
-                        idx += 1
+                    // TODO reduce this
+                    if !found_argument.name().is_flag_argument() {
+                        if !var_posn_found {
+                            var_posn_found = true;
+                            while !end_or_new_flag_arg(&idx) {
+                                idx += 1
+                            }
+                        }
+                    } else {
+                        while !end_or_new_flag_arg(&idx) {
+                            idx += 1
+                        }
                     }
                     Some(idx)
                 }
@@ -740,22 +773,82 @@ impl ArgumentParser {
                 }
             };
 
+            let start_group_idx = match (last_arg_group_idx, arg_and_raw_arg_range.is_empty()) {
+                (None, true) | (Some(_), true) => 0,
+                (None, false) => {
+                    return Err(ParserError::IncorrectValueCount(
+                        found_argument.name().to_string(),
+                        found_argument.nargs().clone(),
+                        found_value_count,
+                    ))
+                } // TODO raise not enough args here
+                (Some(n), false) => n,
+            };
+
+            if end_idx.is_none() && !arg_and_raw_arg_range.is_empty() {
+                // TODO make this function
+                match found_argument.nargs() {
+                    // TODO when do we take from prev flag or prev var???
+                    NArgs::OneOrMore => {
+                        let mut start = start_group_idx as i32;
+                        loop {
+                            if start < 0 || start >= arg_and_raw_arg_range.len() as i32 {
+                                break;
+                            }
+                            let (arg, (group_start, group_end)) =
+                                arg_and_raw_arg_range[start as usize].clone();
+                            if arg.name().is_positional_argument() && arg.nargs().is_variable() {
+                                let has_excess = match arg.nargs() {
+                                    NArgs::AnyNumber => true,
+                                    NArgs::OneOrMore => group_end - group_start > 1,
+                                    _ => false,
+                                };
+
+                                if has_excess {
+                                    arg_and_raw_arg_range[start as usize] =
+                                        (arg, (group_start, group_end - 1));
+                                    start_idx = group_end - 1;
+                                    end_idx = Some(group_end);
+                                    break;
+                                }
+                            }
+                            start -= 1;
+                        }
+                    }
+                    NArgs::Exact(n) => {
+                        let mut start = start_group_idx as i32;
+                        loop {
+                            if start < 0 || start >= arg_and_raw_arg_range.len() as i32 {
+                                break;
+                            }
+                            let (arg, (group_start, group_end)) =
+                                arg_and_raw_arg_range[start as usize].clone();
+                            // TODO downshift is posn but not excess
+                            if arg.name().is_positional_argument() && arg.nargs().is_variable() {
+                                let has_excess = match arg.nargs() {
+                                    NArgs::AnyNumber => group_end - group_start >= n.clone(),
+                                    NArgs::OneOrMore => group_end - group_start - 1 > n.clone(),
+                                    _ => false,
+                                };
+
+                                if has_excess {
+                                    arg_and_raw_arg_range[start as usize] =
+                                        (arg, (group_start, group_end - 1));
+                                    start_idx = group_end - 1;
+                                    end_idx = Some(group_end);
+                                    break;
+                                }
+                            }
+                            start -= 1;
+                        }
+                    }
+                    _ => (),
+                }
+            }
+
             if end_idx.is_none() {
                 start_idx -= n_missing_args;
                 end_idx = Some(start_idx + n_missing_args + found_value_count);
-
-                let start_group_idx = match (last_arg_group_idx, arg_and_raw_arg_range.is_empty()) {
-                    (None, true) => 0,
-                    (None, false) => {
-                        return Err(ParserError::IncorrectValueCount(
-                            found_argument.name().to_string(),
-                            found_argument.nargs().clone(),
-                            found_value_count,
-                        ))
-                    } // TODO raise not enough args here
-                    (Some(n), false) => n,
-                    (Some(_), true) => 0,
-                };
 
                 let mut group_shifts = Vec::new();
                 for (relative_idx, (parsed_argument, (group_start_idx, group_end_idx))) in
@@ -926,7 +1019,7 @@ impl ArgumentParser {
 
                         Ok(Action::Store(arg_val))
                     }
-                    _ => panic!("given unsupported action tp positional argument"),
+                    _ => panic!("given unsupported action to positional argument"),
                 }?)
             };
 
@@ -959,6 +1052,12 @@ impl ArgumentParser {
             }
         }
 
+        // TODO check all arguments have been filled as required
+        // TOOD make permanent?
+        let _ = processed_arguments
+            .iter()
+            .map(|argument| println!("5 {:?}", argument));
+
         if !missing_required_flag_args.is_empty() {
             let name_vec = missing_required_flag_args
                 .iter()
@@ -967,7 +1066,7 @@ impl ArgumentParser {
             let str_vec = string_vec_to_string(&name_vec, true);
             Err(ParserError::MissingRequiredFlagArguments(str_vec))
         } else {
-            Ok(Namespace::new(HashMap::from_iter(
+            let result_namespace = Namespace::new(HashMap::from_iter(
                 processed_arguments.iter().map(|argument| {
                     (
                         argument.fetch_value().clone(),
@@ -983,8 +1082,22 @@ impl ArgumentParser {
                         },
                     )
                 }),
-            )))
+            ));
+            Ok((result_namespace, unknown_args))
         }
+    }
+
+    pub fn parse_args(&self, raw_args: Option<Vec<String>>) -> Result<Namespace, ParserError> {
+        let (namespace, remaining_args) = self.parse_raw_args(raw_args, false)?;
+        debug_assert!(remaining_args.is_empty());
+        Ok(namespace)
+    }
+
+    pub fn parse_known_args(
+        &self,
+        raw_args: Option<Vec<String>>,
+    ) -> Result<(Namespace, Vec<String>), ParserError> {
+        self.parse_raw_args(raw_args, true)
     }
 
     pub fn add_subparsers() {}
@@ -1028,10 +1141,6 @@ impl ArgumentParser {
     }
 
     pub fn format_help(&self) -> String {
-        todo!()
-    }
-
-    pub fn parse_known_args(&self) -> Result<(Namespace, Vec<String>), ParserError> {
         todo!()
     }
 }

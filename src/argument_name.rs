@@ -99,6 +99,10 @@ impl ArgumentName {
         }
     }
 
+    pub fn is_positional_argument(&self) -> bool {
+        !self.is_flag_argument()
+    }
+
     pub fn is_abbrev_argument(&self) -> bool {
         match self {
             ArgumentName::Flag { full, abbrev } if full.is_empty() && !abbrev.is_empty() => true,

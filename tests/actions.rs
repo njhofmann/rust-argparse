@@ -3,6 +3,263 @@ mod actions {
     use py_arg_parse::argument_parser::ArgumentParser;
     use py_arg_parse::parse_result::RetrievalError;
 
+    mod parse_known_args {
+        use py_arg_parse::{argument::NArgs, argument_parser::ParserError};
+
+        use super::*;
+
+        #[test]
+        fn test() {
+            let parser = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["--foo"],
+                    Some("store_true"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["bar"],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+            assert_eq!(
+                parser
+                    .parse_args(Some(vec![
+                        "--foo".to_string(),
+                        "--badger".to_string(),
+                        "BAR".to_string(),
+                        "spam".to_string()
+                    ]))
+                    .unwrap_err(),
+                ParserError::InvalidFlagArgument("badger".to_string())
+            );
+            let (expected_namespace, unknown_args) = parser
+                .parse_known_args(Some(vec![
+                    "--foo".to_string(),
+                    "--badger".to_string(),
+                    "BAR".to_string(),
+                    "spam".to_string(),
+                ]))
+                .unwrap();
+            assert!(expected_namespace.contains("foo"));
+            assert_eq!(
+                unknown_args,
+                vec!["--badger".to_string(), "spam".to_string()]
+            )
+        }
+
+        #[test]
+        fn var_posn_then_var_flag_then_var_posn() {
+            let parser = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["a"],
+                    None,
+                    Some(NArgs::AnyNumber),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["--foo"],
+                    None,
+                    Some(NArgs::AnyNumber),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["b"],
+                    None,
+                    Some(NArgs::AnyNumber),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+            let (expected_namespace, unknown_args) = parser
+                .parse_known_args(Some(vec![
+                    "1".to_string(),
+                    "2".to_string(),
+                    "3".to_string(),
+                    "--foo".to_string(),
+                    "4".to_string(),
+                    "5".to_string(),
+                    "6".to_string(),
+                ]))
+                .unwrap();
+            assert_eq!(
+                expected_namespace.get_three_value::<i32>("a").unwrap(),
+                (1, 2, 3)
+            );
+            assert_eq!(
+                expected_namespace.get_three_value::<i32>("foo").unwrap(),
+                (4, 5, 6)
+            );
+            assert!(expected_namespace.get::<i32>("b").unwrap().is_empty());
+            assert_eq!(unknown_args, vec!["6"])
+        }
+
+        #[test]
+        fn var_posn_then_fixed_flag_then_var_posn() {
+            let parser = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["a"],
+                    None,
+                    Some(NArgs::AnyNumber),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["--foo"],
+                    None,
+                    Some(NArgs::Exact(2)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["b"],
+                    None,
+                    Some(NArgs::AnyNumber),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+            let (expected_namespace, unknown_args) = parser
+                .parse_known_args(Some(vec![
+                    "1".to_string(),
+                    "2".to_string(),
+                    "3".to_string(),
+                    "--foo".to_string(),
+                    "4".to_string(),
+                    "5".to_string(),
+                    "6".to_string(),
+                ]))
+                .unwrap();
+            assert_eq!(
+                expected_namespace.get_three_value::<i32>("a").unwrap(),
+                (1, 2, 3)
+            );
+            assert_eq!(
+                expected_namespace.get_two_value::<i32>("foo").unwrap(),
+                (4, 5)
+            );
+            assert!(expected_namespace.get::<i32>("b").unwrap().is_empty());
+            assert_eq!(unknown_args, vec!["6"])
+        }
+
+        #[test]
+        fn var_posn_then_var_flag_then_one_or_more_posn() {
+            let parser = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["a"],
+                    None,
+                    Some(NArgs::AnyNumber),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["--foo"],
+                    None,
+                    Some(NArgs::AnyNumber),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["b"],
+                    None,
+                    Some(NArgs::OneOrMore),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+            let (expected_namespace, unknown_args) = parser
+                .parse_known_args(Some(vec![
+                    "1".to_string(),
+                    "--foo".to_string(),
+                    "2".to_string(),
+                ]))
+                .unwrap();
+            assert!(expected_namespace.get::<i32>("a").unwrap().is_empty());
+            assert_eq!(expected_namespace.get_one_value::<i32>("b").unwrap(), 1);
+            assert_eq!(expected_namespace.get_one_value::<i32>("foo").unwrap(), 2);
+            assert!(unknown_args.is_empty())
+        }
+    }
+
     mod store {
         use py_arg_parse::{argument::NArgs, argument_parser::ParserError};
 

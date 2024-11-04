@@ -1,17 +1,20 @@
+- parse_known_args
+    - parse_args and such take in string trait?
+    - bool retrieval arg
+- cargo test pick up all tests
+    - ordering isn't 
 - supported raw arg work
     - long_option=single_value
     - -[short_option]single_value
     - pseudo-argument '--' which tells parse_args() that everything after that is a positional argument:
     - combine short options
         test -vvv count
-- misc behavior    
-    - Providing default=argparse.SUPPRESS causes no attribute to be added if the command-line argument was not present
-    - parse_args takes existing namespace
-        - is this worth adding
-    - impl parser default
+- extended default support
+    - default=argparse.SUPPRESS
+    - ArgumentParser(argument_default=...)
         - error out if can't String --> T support, or just warning
-    - parse_known_args
     - ArgumentParser.set_defaults
+    - ArgumentParser.get_default
 - test improvement
     - remove setup from retrieval 
     - split usage display, coverage w/ more metavar
@@ -42,15 +45,16 @@
     - how to release library guide
 
 - will not support / deliberatly not supported
-    - posn arguments don't support required
     - convert_arg_line_to_args as it required manual overriding in python
     - error on nonsensical argument pairings
     - ArgumentParser.exit_on_error
         - raise errors to user in rust like fashion
-    - default only supported for action='store'?
-        - doesn't interface with type system
     - won't support specific positional argument splitting 
     - intermixed args
+
+- maybe but probably not
+    - ArgumentParser.parse_args(namespace=)
+        - 
 
 - note
     - can't have non-required positional arguments
