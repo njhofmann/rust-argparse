@@ -1,3 +1,7 @@
+- parse_args
+    - get rid of group
+    - rm groups
+    - redo take from other var assignment
 - parse_known_args
     - parse_args and such take in string trait?
     - bool retrieval arg

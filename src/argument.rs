@@ -164,6 +164,14 @@ impl NArgs {
             _ => false,
         }
     }
+
+    pub fn n_required_args(&self) -> usize {
+        match self {
+            NArgs::Exact(n) => n.clone(),
+            NArgs::OneOrMore => 1,
+            _ => 0
+        }
+    }
 }
 
 impl Display for NArgs {

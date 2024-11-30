@@ -633,9 +633,12 @@ impl ArgumentParser {
         let mut processed_posn_args: Vec<Argument> = Vec::new();
         let mut arg_and_raw_arg_range: Vec<(Argument, (usize, usize))> = Vec::new();
         let mut var_posn_found = false;
+        let mut last_arg_was_flag = true;
+        let mut set_next_posn_group_idx = false;
         // TODO This doesn't need to be option, remove this
-        let mut last_arg_group_idx: Option<usize> = None; // tracks indices in arg_and_raw_arg_range
-                                                          // contine to parse so long as posn arguments are left or raw args haven't been looked at (may have flags)
+        // staring idx of the last posn arg group
+        let mut last_posn_arg_group_idx: Option<usize> = None; // tracks indices in arg_and_raw_arg_range
+                                                               // contine to parse so long as posn arguments are left or raw args haven't been looked at (may have flags)
         while idx < raw_args.len()
             || (cur_posn_argument_idx.is_some_and(|idx| idx < self.positional_args.len()))
         {
@@ -665,7 +668,7 @@ impl ArgumentParser {
                     && found_arg == Err(ParserError::InvalidFlagArgument(flag_raw_arg.clone()))
                 {
                     unknown_args.push(cur_raw_arg.unwrap().to_string());
-                    last_arg_group_idx = Some(last_arg_group_idx.map_or(0, |x| x + 1)); // should this be here
+                    //last_posn_arg_group_idx = Some(last_posn_arg_group_idx.map_or(0, |x| x + 1)); // should this be here
                     idx += 1; // move past flag
                     continue;
                 }
@@ -675,7 +678,8 @@ impl ArgumentParser {
                     found_arg = processed_arguments.get(&found_arg).unwrap().clone();
                 }
 
-                last_arg_group_idx = Some(last_arg_group_idx.map_or(0, |x| x + 1));
+                last_arg_was_flag = true;                
+
                 idx += 1; // move past flag
                 Ok(found_arg.clone())
             } else if cur_posn_argument_idx.is_none() {
@@ -690,8 +694,14 @@ impl ArgumentParser {
                     )));
                 }
             } else {
-                if last_arg_group_idx.is_none() {
-                    last_arg_group_idx = Some(last_arg_group_idx.map_or(0, |x| x + 1))
+                // if last_posn_arg_group_idx.is_none() {
+                //     last_posn_arg_group_idx = Some(last_posn_arg_group_idx.map_or(0, |x| x + 1))
+                // }
+                if last_arg_was_flag {
+                    //last_posn_arg_group_idx = Some(last_posn_arg_group_idx.map_or(0, |x| x + 1));
+                    println!("set2");
+                    set_next_posn_group_idx = true;
+                    last_arg_was_flag = false;
                 }
                 let found_argument = self.positional_args[cur_posn_argument_idx.unwrap()].clone();
                 cur_posn_argument_idx = if cur_posn_argument_idx
@@ -773,98 +783,175 @@ impl ArgumentParser {
                 }
             };
 
-            let start_group_idx = match (last_arg_group_idx, arg_and_raw_arg_range.is_empty()) {
-                (None, true) | (Some(_), true) => 0,
-                (None, false) => {
-                    return Err(ParserError::IncorrectValueCount(
-                        found_argument.name().to_string(),
-                        found_argument.nargs().clone(),
-                        found_value_count,
-                    ))
-                } // TODO raise not enough args here
-                (Some(n), false) => n,
-            };
+            println!("{:?}", arg_and_raw_arg_range);
+            println!(
+                "{:?} {:?}, {:?}",
+                start_idx, end_idx, last_posn_arg_group_idx
+            );
 
-            if end_idx.is_none() && !arg_and_raw_arg_range.is_empty() {
-                // TODO make this function
-                match found_argument.nargs() {
-                    // TODO when do we take from prev flag or prev var???
-                    NArgs::OneOrMore => {
-                        let mut start = start_group_idx as i32;
-                        loop {
-                            if start < 0 || start >= arg_and_raw_arg_range.len() as i32 {
-                                break;
-                            }
-                            let (arg, (group_start, group_end)) =
-                                arg_and_raw_arg_range[start as usize].clone();
-                            if arg.name().is_positional_argument() && arg.nargs().is_variable() {
-                                let has_excess = match arg.nargs() {
-                                    NArgs::AnyNumber => true,
-                                    NArgs::OneOrMore => group_end - group_start > 1,
-                                    _ => false,
-                                };
+            //if end_idx.is_none() && !arg_and_raw_arg_range.is_empty() {
 
-                                if has_excess {
-                                    arg_and_raw_arg_range[start as usize] =
-                                        (arg, (group_start, group_end - 1));
-                                    start_idx = group_end - 1;
-                                    end_idx = Some(group_end);
-                                    break;
-                                }
-                            }
-                            start -= 1;
-                        }
-                    }
-                    NArgs::Exact(n) => {
-                        let mut start = start_group_idx as i32;
-                        loop {
-                            if start < 0 || start >= arg_and_raw_arg_range.len() as i32 {
-                                break;
-                            }
-                            let (arg, (group_start, group_end)) =
-                                arg_and_raw_arg_range[start as usize].clone();
-                            // TODO downshift is posn but not excess
-                            if arg.name().is_positional_argument() && arg.nargs().is_variable() {
-                                let has_excess = match arg.nargs() {
-                                    NArgs::AnyNumber => group_end - group_start >= n.clone(),
-                                    NArgs::OneOrMore => group_end - group_start - 1 > n.clone(),
-                                    _ => false,
-                                };
+            // let find_prev_var_posn_group = || -> (Option<usize>, Option<usize>) {
+            //     let mut start = start_group_idx as i32;
+            //         loop {
+            //             if start < 0 || start >= arg_and_raw_arg_range.len() as i32 {
+            //                 return (None, None)
+            //             }
+            //             let (arg, (group_start, group_end)) =
+            //                 arg_and_raw_arg_range[start as usize].clone();
+            //             if arg.name().is_positional_argument() && arg.nargs().is_variable() {
+            //                 let has_excess = match arg.nargs() {
+            //                     NArgs::AnyNumber => true,  // TODO generalize this
+            //                     NArgs::OneOrMore => group_end - group_start > 1,
+            //                     _ => false,
+            //                 };
+            //                 if has_excess {
+            //                     arg_and_raw_arg_range[start as usize] =
+            //                         (arg, (group_start, group_end - 1));  // TODO generalize this
+            //                     return (Some(group_end - 1), Some(group_end))
+            //                 }
+            //             }
+            //             start -= 1;
+            //         }
+            // };
 
-                                if has_excess {
-                                    arg_and_raw_arg_range[start as usize] =
-                                        (arg, (group_start, group_end - 1));
-                                    start_idx = group_end - 1;
-                                    end_idx = Some(group_end);
-                                    break;
-                                }
-                            }
-                            start -= 1;
-                        }
-                    }
-                    _ => (),
-                }
+            //     // TODO make this function
+            //     match found_argument.nargs() {
+            //         // TODO when do we take from prev flag or prev var???
+            //         NArgs::OneOrMore => {
+            //             let mut start = start_group_idx as i32;
+            //             loop {
+            //                 if start < 0 || start >= arg_and_raw_arg_range.len() as i32 {
+            //                     break;
+            //                 }
+            //                 let (arg, (group_start, group_end)) =
+            //                     arg_and_raw_arg_range[start as usize].clone();
+            //                 if arg.name().is_positional_argument() && arg.nargs().is_variable() {
+            //                     let has_excess = match arg.nargs() {
+            //                         NArgs::AnyNumber => true,
+            //                         NArgs::OneOrMore => group_end - group_start > 1,
+            //                         _ => false,
+            //                     };
+
+            //                     if has_excess {
+            //                         arg_and_raw_arg_range[start as usize] =
+            //                             (arg, (group_start, group_end - 1));
+            //                         start_idx = group_end - 1;
+            //                         end_idx = Some(group_end);
+            //                         break;
+            //                     }
+            //                 }
+            //                 start -= 1;
+            //             }
+            //         }
+            //         NArgs::Exact(n) => {
+            //             //let mut start = start_group_idx as i32;
+            //             for (relative_idx, (arg, (group_start, group_end))) in
+            //         arg_and_raw_arg_range.clone()[start_group_idx..]
+            //             .iter()
+            //             .enumerate()
+            //             .rev()
+            //             {
+            //                 let  start: i32 = (start_group_idx + relative_idx).try_into().unwrap();
+            //                 println!("{:?}", start);
+            //                 if start < 0 || start >= arg_and_raw_arg_range.len() as i32 {
+            //                     break;
+            //                 }
+            //                 // let (arg, (group_start, group_end)) =
+            //                 //     arg_and_raw_arg_range[start as usize].clone();
+            //                 // TODO downshift if posn but no excess
+            //                 // TODO copy downshift code?
+            //                 if arg.name().is_positional_argument() && arg.nargs().is_variable() {
+            //                     let has_excess = match arg.nargs() {
+            //                         NArgs::AnyNumber => group_end - group_start >= n.clone(),
+            //                         NArgs::OneOrMore => group_end - group_start - 1 > n.clone(),
+            //                         _ => false,
+            //                     };
+
+            //                     if has_excess {
+            //                         for i in start..((start_group_idx as i32) + 1) {
+            //                             let (arg, (local_start, local_end)) = arg_and_raw_arg_range[i as usize].clone();
+            //                             let new_local_start = match i == start {
+            //                                 true => local_start, // take from arg with excess
+            //                                 false => local_start - n // downshift everything else
+            //                             };
+            //                             println!("\n{:?} {:?}", start, start_group_idx);
+            //                             println!("afjust {:?} {:?} {:?}" , arg.name(), new_local_start, local_end-n);
+            //                             arg_and_raw_arg_range[i as usize] = (arg, (new_local_start, local_end - n))
+
+            //                         }
+
+            //                         start_idx = group_end - n ;//+ ((start_group_idx + 1 - start as usize) * n);
+            //                         end_idx = Some(group_end.clone() ); // + ((start_group_idx - start as usize) * n)
+            //                         // arg_and_raw_arg_range[start as usize] =
+            //                         //     (arg, (group_start, group_end - 1));
+            //                         // start_idx = group_end - 1;
+            //                         // end_idx = Some(group_end);
+            //                         println!("{:?} {:?} {:?}\n" , found_argument.name(), start_idx, end_idx);
+            //                         break;
+            //                     }
+            //                 }
+            //                 //start -= 1;
+            //             }
+            //         }
+            //         _ => (),
+            //     }
+            // }
+
+            // TODO get rid of groups???
+
+            if end_idx.is_none() && found_argument.name().is_flag_argument() {
+                panic!("TODO todo here, if end not found then everything is too wrong")
             }
 
             if end_idx.is_none() {
-                start_idx -= n_missing_args;
-                end_idx = Some(start_idx + n_missing_args + found_value_count);
+                // TODO redo these assignments
+                let mut last_recorded_arg = None;
+
+                let start_group_idx = match (last_posn_arg_group_idx, arg_and_raw_arg_range.is_empty())
+                {
+                    (None, false) => {
+                        // is this right?
+                        return Err(ParserError::IncorrectValueCount(
+                            found_argument.name().to_string(),
+                            found_argument.nargs().clone(),
+                            found_value_count,
+                        ));
+                    } // nothing added yet
+                    (Some(n), false) => n, // args added, some are posns
+                    (None, true) => {
+                        // posn args not added
+                        return Err(ParserError::IncorrectValueCount(
+                            found_argument.name().to_string(),
+                            found_argument.nargs().clone(),
+                            found_value_count,
+                        ));
+                    }
+                    (Some(_), true) => panic!("this shouldn't be possible"), // can't have smth in the former but not the latter
+                };
+    
 
                 let mut group_shifts = Vec::new();
+                println!("missing {:?}", n_missing_args);
+                let perm_n_missing_args=  n_missing_args;
                 for (relative_idx, (parsed_argument, (group_start_idx, group_end_idx))) in
                     arg_and_raw_arg_range[start_group_idx..]
                         .iter()
                         .enumerate()
                         .rev()
                 {
+                    println!("parsed {:?} {:?}", parsed_argument.name(), start_group_idx);
+                    //debug_assert!(parsed_argument.name().is_positional_argument());
+                    // TODO fix ordering iteration
+                    if parsed_argument.name().is_flag_argument() {
+                        continue
+                    }
+                    if last_recorded_arg.is_none() {
+                        last_recorded_arg = Some(parsed_argument.clone());
+                    }
                     let n_excess_args = *group_end_idx as i32
                         - *group_start_idx as i32
-                        - match parsed_argument.nargs() {
-                            NArgs::Exact(n) => *n as i32,
-                            NArgs::ZeroOrOne | NArgs::AnyNumber => 0,
-                            NArgs::OneOrMore => 1,
-                        };
-
+                        - parsed_argument.nargs().n_required_args() as i32;
                     debug_assert!(n_excess_args >= 0);
 
                     let n_args_to_shift = if n_missing_args == n_excess_args as usize {
@@ -881,12 +968,21 @@ impl ArgumentParser {
 
                     // track n excess args each process parsed arg can contribute
                     if n_args_to_shift > 0 {
+                        // TODO make shift start_idx again
                         group_shifts.push((start_group_idx + relative_idx, n_args_to_shift));
                     }
 
+                    println!(
+                        "i {:?} {:?} {:?}",
+                        relative_idx,
+                        parsed_argument.name(),
+                        n_excess_args
+                    );
+                    println!("gs {:?}", group_shifts);
                     if n_missing_args == 0 {
                         break;
                     }
+                    println!("{:?}", start_group_idx + relative_idx);
                 }
 
                 if n_missing_args > 0 {
@@ -896,28 +992,54 @@ impl ArgumentParser {
                         found_value_count,
                     ));
                 }
-
+                println!("gs {:?}", group_shifts);
                 for (abs_idx, shift) in group_shifts.into_iter().rev() {
                     for (rel_idx, (arg, (start, end))) in
                         arg_and_raw_arg_range.clone()[abs_idx..].iter().enumerate()
                     {
                         // only take items from first item in group, shift remaining one's down
+                        if arg.name().is_flag_argument() {
+                            continue
+                        }
+                        let new_start =  if rel_idx == 0 { *start } else { *start - shift };
+                        let new_end = end - shift;
+                        println!("shift {:?} start {:?} end {:?}", abs_idx + rel_idx, new_start, new_end);
+                        let x = last_recorded_arg.clone().unwrap().clone();
+                        if arg == &x{
+                            start_idx = new_end;
+                            println!("% {:?} start", start_idx);
+                        }
                         arg_and_raw_arg_range[abs_idx + rel_idx] = (
                             arg.clone(),
                             (
-                                if rel_idx == 0 { *start } else { *start - shift },
-                                end - shift,
+                               new_start,
+                                new_end,
                             ),
                         );
                     }
                 }
+
+                println!("add {:?} {:?}", n_missing_args, found_value_count);
+                end_idx = Some(start_idx + perm_n_missing_args + found_value_count);
+                //start_idx = last_recorded_end_idx ;
+                println!("new {:?} {:?}", start_idx, end_idx);
             }
 
+            println!("{:?}", set_next_posn_group_idx);
             arg_and_raw_arg_range.push((
                 found_argument,
                 (start_idx, end_idx.expect("this should be set now")),
-            ))
+            )); 
+
+            println!("a {:?}", arg_and_raw_arg_range);
+            if set_next_posn_group_idx {
+                set_next_posn_group_idx = false;
+                last_posn_arg_group_idx = Some(arg_and_raw_arg_range.len()-1);
+                println!("set {:?}", last_posn_arg_group_idx);
+            }
         }
+
+        println!("{:?}", arg_and_raw_arg_range);
 
         let mut seen_arguments: HashSet<Argument> = HashSet::new(); // TODO needed? or can just use arg_vals
         for (argument, (start_idx, end_idx)) in arg_and_raw_arg_range {

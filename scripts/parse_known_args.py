@@ -31,7 +31,7 @@ def parse_from_nargs(nargs):
         if not is_flag:
             idx += 1
     
-    return parser.format_usage(), parser.parse_known_args(sys.argv[2:])
+    return parser.format_usage(), parser.parse_args(sys.argv[2:])
 
 
 if __name__ == '__main__':

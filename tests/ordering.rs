@@ -116,7 +116,7 @@ mod ordering {
     }
 
     #[test]
-    fn var_posn_then_exact_posn() {
+    fn var_posn_exact_posn() {
         let namespace = init_test_arg_parser(
             vec![(NArgs::AnyNumber, false), (NArgs::Exact(1), false)],
             vec!["a", "b", "c", "d", "e"],
@@ -134,7 +134,7 @@ mod ordering {
     }
 
     #[test]
-    fn var_posn_then_var_posn() {
+    fn var_posn_var_posn() {
         let namespace = init_test_arg_parser(
             vec![(NArgs::AnyNumber, false), (NArgs::AnyNumber, false)],
             vec!["a", "b", "c", "d", "e"],
@@ -153,7 +153,7 @@ mod ordering {
     }
 
     #[test]
-    fn exact_posn_then_var_posn() {
+    fn exact_posn_var_posn() {
         let namespace = init_test_arg_parser(
             vec![(NArgs::Exact(1), false), (NArgs::AnyNumber, false)],
             vec!["a", "b", "c", "d", "e"],
@@ -171,7 +171,7 @@ mod ordering {
     }
 
     #[test]
-    fn var_posn_then_exact_posn_then_exact_posn() {
+    fn var_posn_exact_posn_exact_posn() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::AnyNumber, false),
@@ -180,6 +180,7 @@ mod ordering {
             ],
             vec!["a", "b", "c", "d", "e"],
         );
+        println!("{:?}", namespace);
         assert_eq!(
             namespace.get::<String>("0").unwrap(),
             vec!["a".to_string(), "b".to_string(), "c".to_string(),]
@@ -189,7 +190,7 @@ mod ordering {
     }
 
     #[test]
-    fn var_posn_then_exact_posn_then_var_posn() {
+    fn var_posn_exact_posn_var_posn() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::AnyNumber, false),
@@ -212,7 +213,7 @@ mod ordering {
     }
 
     #[test]
-    fn exact_posn_then_var_posn_then_exact_posn() {
+    fn exact_posn_var_posn_exact_posn() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::Exact(1), false),
@@ -230,7 +231,7 @@ mod ordering {
     }
 
     #[test]
-    fn exact_posn_then_zero_or_one_posn_then_exact_posn_three_values() {
+    fn exact_posn_zero_or_one_posn_exact_posn_three_values() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::Exact(1), false),
@@ -245,7 +246,7 @@ mod ordering {
     }
 
     #[test]
-    fn zero_or_one_posn_then_zero_or_one_posn_then_exact_posn_three_values() {
+    fn zero_or_one_posn_zero_or_one_posn_exact_posn_three_values() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::ZeroOrOne, false),
@@ -263,7 +264,7 @@ mod ordering {
     }
 
     #[test]
-    fn zero_or_one_posn_then_variable_posn_then_exact_posn_three_values() {
+    fn zero_or_one_posn_variable_posn_exact_posn_three_values() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::ZeroOrOne, false),
@@ -281,7 +282,7 @@ mod ordering {
     }
 
     #[test]
-    fn exact_posn_then_zero_or_one_posn_then_exact_posn_two_values() {
+    fn exact_posn_zero_or_one_posn_exact_posn_two_values() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::Exact(1), false),
@@ -296,7 +297,7 @@ mod ordering {
     }
 
     #[test]
-    fn var_posn_then_var_posn_then_exact_posn() {
+    fn var_posn_var_posn_exact_posn() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::AnyNumber, false),
@@ -319,7 +320,7 @@ mod ordering {
     }
 
     #[test]
-    fn exact_posn_then_exact_posn_then_var_posn() {
+    fn exact_posn_exact_posn_var_posn() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::Exact(1), false),
@@ -337,7 +338,7 @@ mod ordering {
     }
 
     #[test]
-    fn exact_posn_then_var_posn_then_var_posn() {
+    fn exact_posn_var_posn_var_posn() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::Exact(2), false),
@@ -358,7 +359,7 @@ mod ordering {
     }
 
     #[test]
-    fn at_least_one_posn_then_exact_posn() {
+    fn at_least_one_posn_exact_posn() {
         let namespace = init_test_arg_parser(
             vec![(NArgs::OneOrMore, false), (NArgs::Exact(1), false)],
             vec!["a", "b", "c", "d", "e"],
@@ -376,7 +377,7 @@ mod ordering {
     }
 
     #[test]
-    fn at_least_one_posn_then_at_least_one_posn_posn() {
+    fn at_least_one_posn_at_least_one_posn_posn() {
         let namespace = init_test_arg_parser(
             vec![(NArgs::OneOrMore, false), (NArgs::OneOrMore, false)],
             vec!["a", "b", "c", "d", "e"],
@@ -485,7 +486,7 @@ mod ordering {
     }
 
     #[test]
-    fn exact_posn_then_zero_or_one_posn_then_one_or_more_posn() {
+    fn exact_posn_zero_or_one_posn_one_or_more_posn() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::Exact(2), false),
@@ -506,7 +507,7 @@ mod ordering {
     }
 
     #[test]
-    fn var_flag_then_var_posn() {
+    fn var_flag_var_posn() {
         let namespace = init_test_arg_parser(
             vec![(NArgs::AnyNumber, true), (NArgs::AnyNumber, false)],
             vec!["--0", "a", "b", "c", "d", "e"],
@@ -524,18 +525,18 @@ mod ordering {
         assert!(namespace.get::<String>("1").unwrap().is_empty());
     }
 
-    #[test]
-    fn var_flag_then_one_or_more_posn() {
-        let namespace = init_test_arg_parser(
-            vec![(NArgs::AnyNumber, true), (NArgs::OneOrMore, false)],
-            vec!["--0", "a", "b"],
-        );
-        assert_eq!(namespace.get::<String>("0").unwrap(), vec!["a".to_string()]);
-        assert_eq!(namespace.get::<String>("1").unwrap(), vec!["b".to_string()]);
-    }
+    // #[test] // TODO error this out
+    // fn var_flag_one_or_more_posn() {
+    //     let namespace = init_test_arg_parser(
+    //         vec![(NArgs::AnyNumber, true), (NArgs::OneOrMore, false)],
+    //         vec!["--0", "a", "b"],
+    //     );
+    //     assert_eq!(namespace.get::<String>("0").unwrap(), vec!["a".to_string()]);
+    //     assert_eq!(namespace.get::<String>("1").unwrap(), vec!["b".to_string()]);
+    // }
 
     #[test]
-    fn var_posn_then_var_flag_then_one_or_more_posn() {
+    fn var_posn_var_flag_one_or_more_posn() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::AnyNumber, false),
@@ -555,7 +556,7 @@ mod ordering {
     }
 
     // #[test]
-    // fn one_or_more_posn_then_var_flag_then_one_or_more_posn() {
+    // fn one_or_more_posn_var_flag_one_or_more_posn() {
     //     let namespace = init_test_arg_parser(
     //         vec![(NArgs::OneOrMore, false), (NArgs::AnyNumber, true), (NArgs::OneOrMore, false)],
     //         vec!["a", "--1", "b", "c"],
@@ -577,10 +578,10 @@ mod ordering {
     // }
 
     #[test]
-    fn var_flag_then_exact_posn() {}
+    fn var_flag_exact_posn() {}
 
     #[test]
-    fn var_posn_then_var_flag_posn_first() {
+    fn var_posn_var_flag_posn_first() {
         let namespace = init_test_arg_parser(
             vec![(NArgs::AnyNumber, false), (NArgs::AnyNumber, true)],
             vec!["a", "--1", "b", "c"],
@@ -593,7 +594,7 @@ mod ordering {
     }
 
     #[test]
-    fn var_posn_then_var_flag_flag_first() {
+    fn var_posn_var_flag_flag_first() {
         let namespace = init_test_arg_parser(
             vec![(NArgs::AnyNumber, false), (NArgs::AnyNumber, true)],
             vec!["--1", "a", "b", "c"],
@@ -606,7 +607,7 @@ mod ordering {
     }
 
     #[test]
-    fn var_posn_then_var_flag_then_exact_posn() {
+    fn var_posn_var_flag_exact_posn() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::AnyNumber, false),
@@ -627,7 +628,7 @@ mod ordering {
     }
 
     #[test]
-    fn var_posn_then_var_flag_some_after_flag() {
+    fn var_posn_var_flag_some_after_flag() {
         let namespace = init_test_arg_parser(
             vec![(NArgs::AnyNumber, false), (NArgs::AnyNumber, true)],
             vec!["a", "b", "c", "--1", "d", "e"],
@@ -643,7 +644,7 @@ mod ordering {
     }
 
     #[test]
-    fn var_posn_then_exact_flag_then_var_posn() {
+    fn var_posn_exact_flag_var_posn() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::AnyNumber, false),
@@ -661,7 +662,7 @@ mod ordering {
     }
 
     #[test]
-    fn var_posn_then_exact_flag_then_exact_posn() {
+    fn var_posn_exact_flag_exact_posn() {
         let namespace = init_test_arg_parser(
             vec![
                 (NArgs::AnyNumber, false),
@@ -680,7 +681,7 @@ mod ordering {
     }
 
     #[test]
-    fn var_posn_then_var_flag_none_after_flag() {
+    fn var_posn_var_flag_none_after_flag() {
         let namespace = init_test_arg_parser(
             vec![(NArgs::AnyNumber, false), (NArgs::AnyNumber, true)],
             vec!["a", "b", "c", "--1"],
@@ -722,12 +723,15 @@ mod ordering {
     fn zero_or_one_flag_as_zero_exact_posn() {
         let namespace = init_test_arg_parser(
             vec![(NArgs::ZeroOrOne, true), (NArgs::Exact(3), false)],
-            vec!["--0", "a", "b", "c"],
+            vec!["--0", "a", "b", "c", "d"],
         );
-        assert!(namespace.get::<String>("0").unwrap().is_empty());
+        assert_eq!(
+            namespace.get::<String>("0").unwrap(),
+            vec!["a".to_string() ]
+        );
         assert_eq!(
             namespace.get::<String>("1").unwrap(),
-            vec!["a".to_string(), "b".to_string(), "c".to_string()]
+            vec!["b".to_string(), "c".to_string(), "d".to_string(), ]
         );
     }
 }
