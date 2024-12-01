@@ -169,7 +169,7 @@ impl NArgs {
         match self {
             NArgs::Exact(n) => n.clone(),
             NArgs::OneOrMore => 1,
-            _ => 0
+            _ => 0,
         }
     }
 }

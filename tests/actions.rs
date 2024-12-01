@@ -119,6 +119,7 @@ mod actions {
                     "4".to_string(),
                     "5".to_string(),
                     "6".to_string(),
+                    "--c".to_string(),
                 ]))
                 .unwrap();
             assert_eq!(
@@ -130,7 +131,7 @@ mod actions {
                 (4, 5, 6)
             );
             assert!(expected_namespace.get::<i32>("b").unwrap().is_empty());
-            assert_eq!(unknown_args, vec!["6"])
+            assert_eq!(unknown_args, vec!["--c"])
         }
 
         #[test]

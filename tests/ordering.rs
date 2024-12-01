@@ -725,13 +725,10 @@ mod ordering {
             vec![(NArgs::ZeroOrOne, true), (NArgs::Exact(3), false)],
             vec!["--0", "a", "b", "c", "d"],
         );
-        assert_eq!(
-            namespace.get::<String>("0").unwrap(),
-            vec!["a".to_string() ]
-        );
+        assert_eq!(namespace.get::<String>("0").unwrap(), vec!["a".to_string()]);
         assert_eq!(
             namespace.get::<String>("1").unwrap(),
-            vec!["b".to_string(), "c".to_string(), "d".to_string(), ]
+            vec!["b".to_string(), "c".to_string(), "d".to_string(),]
         );
     }
 }
