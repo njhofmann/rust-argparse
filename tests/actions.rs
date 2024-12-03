@@ -744,6 +744,43 @@ mod actions {
                 ("test".to_string(), "sugar".to_string(), "poppy".to_string())
             )
         }
+
+        #[test]
+        fn with_parent_parser() {
+            let parent = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["--foo", "-f"],
+                    Some("append_const"),
+                    None,
+                    Some(vec!["test"]),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("maud"),
+                    None,
+                )
+                .unwrap();
+            let child = ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                Some(vec![parent]),
+                None,
+                None,
+                None,
+                Some(false),
+                None,
+            )
+            .unwrap();
+            let namespace = child.parse_args(Some(vec!["-f".to_string()])).unwrap();
+            assert_eq!(
+                namespace.get_one_value::<String>("maud").unwrap(),
+                "test".to_string()
+            )
+        }
     }
 
     mod count {

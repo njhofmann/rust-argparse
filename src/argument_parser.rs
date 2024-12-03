@@ -150,6 +150,13 @@ impl ConflictHandlingStrategy {
             )),
         }
     }
+
+    fn is_override(&self) -> bool {
+        match self {
+            Self::Override => true,
+            _ => false,
+        }
+    }
 }
 
 impl Display for ConflictHandlingStrategy {
@@ -262,14 +269,6 @@ impl ArgumentParser {
             version_arg_added: false,
         };
 
-        if let Some(parents) = parents {
-            for parent_parser in parents.iter() {
-                for argument in parent_parser.arguments() {
-                    parser = parser.store_argument(argument.clone(), None)?;
-                }
-            }
-        }
-
         if add_help.unwrap_or(true) && !parser.help_arg_added {
             parser = parser
                 .add_argument::<&str>(
@@ -288,13 +287,42 @@ impl ArgumentParser {
                 .unwrap();
         }
 
+        // do this after setting up the parser
+        if let Some(parents) = parents {
+            for parent_parser in parents.iter() {
+                for argument in parent_parser.arguments() {
+                    println!("8 {:?}", argument);
+                    // this is a pruned down version of add_argument
+                    (
+                        parser.flag_args,
+                        parser.positional_args,
+                        parser.arg_name_mapping,
+                        parser.allow_abbrev_mapping,
+                    ) = parser.check_for_duplicate_arg_names(argument.name())?;
+                    // TODO need to fully clone dest here
+                    let cloned_arg = argument.clone();
+                    let temp_dest = cloned_arg.dest().clone();
+                    let dest: Option<&str> = temp_dest.as_deref();
+                    parser = parser.store_argument(cloned_arg, dest)?;
+                }
+            }
+        }
+        println!("5 {:?}", parser.flag_args);
         Ok(parser)
     }
 
     fn check_for_duplicate_arg_names(
         &self,
         arg_name: &ArgumentName,
-    ) -> Result<(Vec<Argument>, Vec<Argument>), ArgumentError> {
+    ) -> Result<
+        (
+            Vec<Argument>,
+            Vec<Argument>,
+            HashMap<String, (usize, bool)>,
+            Option<HashMap<String, (usize, bool)>>,
+        ),
+        ArgumentError,
+    > {
         let handle_overlap = |argument: &Argument| -> Option<Result<Argument, ArgumentError>> {
             let overlap = argument.name().overlap(arg_name);
             if overlap.is_empty() {
@@ -349,7 +377,24 @@ impl ArgumentParser {
             .iter()
             .filter_map(|argument| handle_overlap(argument))
             .collect::<Result<Vec<Argument>, ArgumentError>>()?;
-        Ok((new_flag_arguments, new_positional_arguments))
+
+        let (new_arg_name_mapping, new_allow_abbrev_mapping) = if &new_flag_arguments.len()
+            < &self.flag_args.len()
+            || &new_positional_arguments.len() < &self.positional_args.len()
+        {
+            self.init_arg_idx_mappings(&new_flag_arguments, &new_positional_arguments)
+        } else {
+            (
+                self.arg_name_mapping.clone(),
+                self.allow_abbrev_mapping.clone(),
+            )
+        };
+        Ok((
+            new_flag_arguments,
+            new_positional_arguments,
+            new_arg_name_mapping,
+            new_allow_abbrev_mapping,
+        ))
     }
 
     fn get_flag_argument(&self, argument_name: &String) -> Result<Argument, ParserError> {
@@ -403,7 +448,8 @@ impl ArgumentParser {
     ) -> Result<ArgumentParser, ArgumentError> {
         let (help_arg_added, version_arg_added) = match argument.action() {
             Action::Help => {
-                if self.help_arg_added {
+                if self.help_arg_added && !self.conflict_handler.is_override() {
+                    println!("err");
                     Err(ArgumentError::DuplicateHelpArgument(
                         argument.name().to_string(),
                     ))
@@ -412,7 +458,7 @@ impl ArgumentParser {
                 }
             }
             Action::Version(_) => {
-                if self.version_arg_added {
+                if self.version_arg_added && !self.conflict_handler.is_override() {
                     Err(ArgumentError::DuplicateVersionArgument(
                         argument.name().to_string(),
                     ))
@@ -563,19 +609,9 @@ impl ArgumentParser {
         version: Option<&str>,
     ) -> Result<ArgumentParser, ArgumentError> {
         let arg_name: ArgumentName = ArgumentName::new(name, &self.prefix_chars)?.clone();
-        let (new_flag_args, new_positional_args) = self.check_for_duplicate_arg_names(&arg_name)?;
+        let (new_flag_args, new_positional_args, new_arg_name_mapping, new_allow_abbrev_mapping) =
+            self.check_for_duplicate_arg_names(&arg_name)?;
         // this shouldn't happen often
-        let (new_arg_name_mapping, new_allow_abbrev_mapping) = if &new_flag_args.len()
-            < &self.flag_args.len()
-            || &new_positional_args.len() < &self.positional_args.len()
-        {
-            self.init_arg_idx_mappings(&new_flag_args, &new_positional_args)
-        } else {
-            (
-                self.arg_name_mapping.clone(),
-                self.allow_abbrev_mapping.clone(),
-            )
-        };
         let constant = constant.map(|x| x.into_iter().map(|y| y.to_string()).collect());
         let default = default.map(|x| x.into_iter().map(|y| y.to_string()).collect());
         let choices = choices.map(|inner| {
@@ -612,9 +648,11 @@ impl ArgumentParser {
     pub fn arguments(&self) -> Vec<&Argument> {
         let mut arguments = Vec::new();
         for argument in self.positional_args.iter() {
+            println!("6 {:?}", argument);
             arguments.push(argument)
         }
         for argument in self.flag_args.iter() {
+            println!("6 {:?}", argument);
             arguments.push(argument)
         }
         arguments
@@ -1902,5 +1940,154 @@ mod test {
                 .unwrap_err(),
             ArgumentError::DuplicateArgumentNameValues("[h]".to_string())
         )
+    }
+
+    mod parent_parser_tests {
+        use crate::{argument_error::ArgumentError, argument_parser::ArgumentParser};
+
+        #[test]
+        fn test_non_conflicting_arg() {
+            let parent = ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(true),
+                None,
+            )
+            .unwrap();
+            let child = ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                Some(vec![parent]),
+                None,
+                None,
+                None,
+                Some(false),
+                None,
+            );
+            assert!(child.is_ok())
+        }
+
+        #[test]
+        fn test_non_conflicting_arg_non_help() {
+            let parent = ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                None,
+            )
+            .unwrap()
+            .add_argument::<&str>(
+                vec!["--foo"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            let child = ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                Some(vec![parent]),
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            assert!(child.is_ok());
+            let child = child.unwrap();
+            let namespace = child
+                .parse_args(Some(vec!["--foo".to_string(), "bar".to_string()]))
+                .unwrap();
+            assert_eq!(
+                namespace.get_one_value::<String>("foo").unwrap(),
+                "bar".to_string()
+            );
+        }
+
+        #[test]
+        fn test_conflicting_arg() {
+            let parent = ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(true),
+                None,
+            )
+            .unwrap();
+            let child = ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                Some(vec![parent]),
+                None,
+                None,
+                None,
+                Some(true),
+                None,
+            );
+            assert_eq!(
+                child.unwrap_err(),
+                ArgumentError::DuplicateArgumentNameValues("[help, h]".to_string())
+            )
+        }
+
+        #[test]
+        fn test_conflicting_arg_with_override() {
+            let parent = ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(true),
+                None,
+            )
+            .unwrap();
+            let child = ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                Some(vec![parent]),
+                None,
+                None,
+                Some("override"),
+                Some(true),
+                None,
+            );
+            assert!(child.is_ok());
+        }
     }
 }
