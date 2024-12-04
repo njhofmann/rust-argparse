@@ -701,7 +701,7 @@ mod actions {
                     None,
                     None,
                     None,
-                    Some("maud"),
+                    Some("gia"),
                     None,
                 )
                 .unwrap()
@@ -715,7 +715,7 @@ mod actions {
                     None,
                     None,
                     None,
-                    Some("maud"),
+                    Some("gia"),
                     None,
                 )
                 .unwrap()
@@ -729,7 +729,7 @@ mod actions {
                     None,
                     None,
                     None,
-                    Some("maud"),
+                    Some("gia"),
                     None,
                 )
                 .unwrap()
@@ -740,7 +740,7 @@ mod actions {
                 ]))
                 .unwrap();
             assert_eq!(
-                namespace.get_three_value::<String>("maud").unwrap(),
+                namespace.get_three_value::<String>("gia").unwrap(),
                 ("test".to_string(), "sugar".to_string(), "poppy".to_string())
             )
         }

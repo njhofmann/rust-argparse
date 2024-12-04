@@ -165,7 +165,7 @@ impl NArgs {
         }
     }
 
-    pub fn n_required_args(&self) -> usize {
+    pub fn min_n_required_args(&self) -> usize {
         match self {
             NArgs::Exact(n) => n.clone(),
             NArgs::OneOrMore => 1,
@@ -230,6 +230,9 @@ pub struct Argument {
     action: Action,
     metavar: Option<String>,
     dest: Option<String>, // only ever a single value
+    // for arguments that are created only to help a user given argument
+    // rn only true for dest arg for append_const acions
+    is_helper_arg: bool,
 }
 
 impl Display for Argument {
@@ -448,6 +451,7 @@ impl Argument {
             action: action.clone(),
             metavar: metavar.map(|x| x.to_string()),
             dest: dest.map(|x| x.to_string()),
+            is_helper_arg: false,
         })
     }
 
@@ -462,6 +466,7 @@ impl Argument {
             action: new_action,
             metavar: self.metavar.clone(),
             dest: self.dest.clone(),
+            is_helper_arg: self.is_helper_arg,
         }
     }
 
@@ -476,6 +481,7 @@ impl Argument {
             action: self.action.clone(),
             metavar: self.metavar.clone(),
             dest: self.dest.clone(),
+            is_helper_arg: self.is_helper_arg,
         }
     }
 
@@ -490,6 +496,7 @@ impl Argument {
             action: self.action.clone(),
             metavar: self.metavar.clone(),
             dest: self.dest.clone(),
+            is_helper_arg: self.is_helper_arg,
         }
     }
 
@@ -608,6 +615,16 @@ impl Argument {
 
         builder
     }
+
+    pub fn set_as_helper_arg(&self) -> Argument {
+        let mut new_argument = self.clone();
+        new_argument.is_helper_arg = true;
+        new_argument
+    }
+
+    pub fn is_helper_arg(&self) -> bool {
+        return self.is_helper_arg;
+    }
 }
 
 #[cfg(test)]
@@ -651,7 +668,8 @@ mod test {
                 nargs: NArgs::Exact(1),
                 action: Action::Store(vec![]),
                 metavar: None,
-                dest: None
+                dest: None,
+                is_helper_arg: false
             },
         )
     }
@@ -682,7 +700,8 @@ mod test {
                 nargs: NArgs::Exact(1),
                 action: Action::Store(vec![]),
                 metavar: None,
-                dest: None
+                dest: None,
+                is_helper_arg: false
             },
         )
     }
@@ -716,7 +735,8 @@ mod test {
                 default: None,
                 nargs: NArgs::Exact(1),
                 metavar: None,
-                dest: None
+                dest: None,
+                is_helper_arg: false
             },
         )
     }
@@ -789,7 +809,8 @@ mod test {
                 default: Some(vec!["a".to_string()]),
                 nargs: NArgs::AnyNumber,
                 dest: None,
-                metavar: None
+                metavar: None,
+                is_helper_arg: false,
             },
         )
     }

@@ -291,7 +291,6 @@ impl ArgumentParser {
         if let Some(parents) = parents {
             for parent_parser in parents.iter() {
                 for argument in parent_parser.arguments() {
-                    println!("8 {:?}", argument);
                     // this is a pruned down version of add_argument
                     (
                         parser.flag_args,
@@ -299,7 +298,6 @@ impl ArgumentParser {
                         parser.arg_name_mapping,
                         parser.allow_abbrev_mapping,
                     ) = parser.check_for_duplicate_arg_names(argument.name())?;
-                    // TODO need to fully clone dest here
                     let cloned_arg = argument.clone();
                     let temp_dest = cloned_arg.dest().clone();
                     let dest: Option<&str> = temp_dest.as_deref();
@@ -307,7 +305,6 @@ impl ArgumentParser {
                 }
             }
         }
-        println!("5 {:?}", parser.flag_args);
         Ok(parser)
     }
 
@@ -449,7 +446,6 @@ impl ArgumentParser {
         let (help_arg_added, version_arg_added) = match argument.action() {
             Action::Help => {
                 if self.help_arg_added && !self.conflict_handler.is_override() {
-                    println!("err");
                     Err(ArgumentError::DuplicateHelpArgument(
                         argument.name().to_string(),
                     ))
@@ -490,34 +486,7 @@ impl ArgumentParser {
             &self.allow_abbrev_mapping,
         );
 
-        if let Action::AppendConst(_) = argument.action() {
-            let new_dest_argument = Argument::new(
-                ArgumentName::Flag {
-                    full: vec![dest.unwrap().to_string()],
-                    abbrev: vec![],
-                },
-                Some("extend"),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
-            if !new_arg_name_mapping.contains_key(new_dest_argument.fetch_value()) {
-                new_flag_args.push(new_dest_argument.clone());
-                new_arg_name_mapping.insert(
-                    new_dest_argument.fetch_value().clone(),
-                    (new_flag_args.len() - 1, true),
-                );
-            }
-        };
-
-        Ok(ArgumentParser {
+        let mut new_parser = ArgumentParser {
             positional_args: new_positional_args,
             flag_args: new_flag_args,
             arg_name_mapping: new_arg_name_mapping,
@@ -531,7 +500,45 @@ impl ArgumentParser {
             conflict_handler: self.conflict_handler,
             help_arg_added: help_arg_added,
             version_arg_added: version_arg_added,
-        })
+        };
+
+        if let Action::AppendConst(_) = argument.action() {
+            if dest.is_none() {
+                todo!()
+            }
+            let dest = dest.unwrap().to_string();
+            let new_dest_argument = Argument::new(
+                ArgumentName::Flag {
+                    full: vec![dest.clone()],
+                    abbrev: vec![],
+                },
+                Some("extend"),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap()
+            .set_as_helper_arg();
+            let existing_dest_arg = self.get_flag_argument(&dest);
+            if existing_dest_arg.is_err() {
+                // if is_some() is already in
+                new_parser = new_parser.store_argument(new_dest_argument, None)?;
+            } else {
+                let existing_dest_arg: Argument = existing_dest_arg.unwrap();
+                match (existing_dest_arg.action(), new_dest_argument.action()) {
+                    (Action::Extend(_), Action::Extend(_)) => Ok(()),
+                    _ => Err(ArgumentError::DuplicateArgumentName(dest)),
+                }?
+            }
+        };
+
+        Ok(new_parser)
     }
 
     fn add_arg_to_abbrev_mapping(
@@ -648,12 +655,13 @@ impl ArgumentParser {
     pub fn arguments(&self) -> Vec<&Argument> {
         let mut arguments = Vec::new();
         for argument in self.positional_args.iter() {
-            println!("6 {:?}", argument);
             arguments.push(argument)
         }
         for argument in self.flag_args.iter() {
-            println!("6 {:?}", argument);
-            arguments.push(argument)
+            if !argument.is_helper_arg() {
+                // only return arguments that were "given" by user
+                arguments.push(argument)
+            }
         }
         arguments
     }
@@ -673,7 +681,6 @@ impl ArgumentParser {
         let mut var_posn_found = false;
         let mut last_arg_was_flag = true;
         let mut set_next_posn_group_idx = false;
-        // TODO This doesn't need to be option, remove this
         // staring idx of the last posn arg group
         let mut last_posn_arg_group_idx: Option<usize> = None; // tracks indices in arg_and_raw_arg_range
                                                                // contine to parse so long as posn arguments are left or raw args haven't been looked at (may have flags)
@@ -880,7 +887,7 @@ impl ArgumentParser {
 
                     let n_excess_args = *group_end_idx as i32
                         - *group_start_idx as i32
-                        - parsed_argument.nargs().n_required_args() as i32;
+                        - parsed_argument.nargs().min_n_required_args() as i32;
 
                     debug_assert!(n_excess_args >= 0);
 
