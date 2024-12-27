@@ -9,9 +9,6 @@ pub mod argument_parser;
 pub mod parse_result;
 use thiserror::Error;
 
-const FLAG_ARG_LEN: usize = 2;
-const FLAG_ARG_ABBREV_LEN: usize = 1;
-
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("value \"{0}\" is not one of supported values {1}")]
 pub struct InvalidChoice(String, String);

@@ -1,21 +1,16 @@
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::hash::Hasher;
 
 use crate::argument_error::ArgumentError;
-use crate::argument_parser::PrefixCharOutcomes;
 use crate::argument_parser::PrefixChars;
 use crate::string_vec_to_string;
-use crate::FLAG_ARG_ABBREV_LEN;
-use crate::FLAG_ARG_LEN;
 
 #[derive(Clone, Debug, Eq)]
 pub enum ArgumentName {
     Positional(String),
-    Flag {
-        full: Vec<String>,
-        abbrev: Vec<String>,
-    },
+    Flag(HashMap<usize, Vec<String>>), // num of prexies to identifiers given with that prefix
 }
 
 impl ArgumentName {
@@ -27,68 +22,62 @@ impl ArgumentName {
             Err(ArgumentError::EmptyArgumentName)
         } else if raw_arg_names.len() == 1 {
             let raw_arg_name = raw_arg_names.first().unwrap();
-            match prefix_chars.parse_string(raw_arg_name) {
-                PrefixCharOutcomes::LONG => Ok(ArgumentName::Flag {
-                    full: vec![raw_arg_name[FLAG_ARG_LEN..].to_string()],
-                    abbrev: vec![],
-                }),
-                PrefixCharOutcomes::ABBREV => Ok(ArgumentName::Flag {
-                    full: vec![],
-                    abbrev: vec![raw_arg_name[FLAG_ARG_ABBREV_LEN..].to_string()],
-                }),
-                PrefixCharOutcomes::NONE => Ok(ArgumentName::Positional(raw_arg_name.to_string())),
+            let (parsed_arg_name, n_prefixes) = prefix_chars.parse_string(raw_arg_name);
+            if n_prefixes == 0 {
+                Ok(ArgumentName::Positional(parsed_arg_name.to_string()))
+            } else {
+                let mut map = HashMap::new();
+                map.insert(n_prefixes, vec![parsed_arg_name.to_string()]);
+                Ok(ArgumentName::Flag(map))
             }
         } else {
             // TODO multiple posn arguments error vs mixed arguments err
-            let mut names = vec![];
-            let mut abbreviations = vec![];
+            let mut map: HashMap<usize, Vec<String>> = HashMap::new();
             let mut posn_arg_found = false;
             for raw_arg_name in raw_arg_names.into_iter() {
-                match prefix_chars.parse_string(raw_arg_name) {
-                    PrefixCharOutcomes::LONG => {
-                        if posn_arg_found {
-                            return Err(ArgumentError::MixedArguments);
-                        }
-                        let arg_name = raw_arg_name[FLAG_ARG_LEN..].to_string();
-                        if names.contains(&arg_name) || abbreviations.contains(&arg_name) {
-                            return Err(ArgumentError::DuplicateArgumentName(arg_name));
-                        }
-                        names.push(arg_name)
+                let (parsed_arg_name, n_prefixes) = prefix_chars.parse_string(raw_arg_name);
+                if n_prefixes == 0 {
+                    if !map.is_empty() {
+                        return Err(ArgumentError::MixedArguments);
+                    } else if posn_arg_found {
+                        return Err(ArgumentError::MultiplePositionalArgumentNames);
+                    } else {
+                        posn_arg_found = true;
                     }
-                    PrefixCharOutcomes::ABBREV => {
-                        if posn_arg_found {
-                            return Err(ArgumentError::MixedArguments);
-                        }
-                        let arg_name = raw_arg_name[FLAG_ARG_ABBREV_LEN..].to_string();
-                        if names.contains(&arg_name) || abbreviations.contains(&arg_name) {
-                            return Err(ArgumentError::DuplicateArgumentName(arg_name.clone()));
-                        }
-                        abbreviations.push(arg_name)
+                } else {
+                    if posn_arg_found {
+                        return Err(ArgumentError::MixedArguments);
                     }
-                    PrefixCharOutcomes::NONE => {
-                        if !names.is_empty() || !abbreviations.is_empty() {
-                            return Err(ArgumentError::MixedArguments);
-                        } else if posn_arg_found {
-                            return Err(ArgumentError::MultiplePositionalArgumentNames);
-                        } else {
-                            posn_arg_found = true;
-                        }
+                    if map
+                        .clone()
+                        .into_iter()
+                        .any(|(_, v)| v.contains(&parsed_arg_name.to_string()))
+                    {
+                        return Err(ArgumentError::DuplicateArgumentName(
+                            parsed_arg_name.to_string(),
+                        ));
                     }
+
+                    let mut temp_map = map.clone();
+                    if !temp_map.contains_key(&n_prefixes) {
+                        temp_map.insert(n_prefixes, Vec::new());
+                    }
+                    temp_map
+                        .get_mut(&n_prefixes)
+                        .unwrap()
+                        .push(parsed_arg_name.to_string());
+                    map = temp_map;
                 }
             }
 
-            debug_assert!(!names.is_empty());
-            Ok(ArgumentName::Flag {
-                full: names,
-                abbrev: abbreviations,
-            })
+            Ok(ArgumentName::Flag(map.clone()))
         }
     }
 
     pub fn contains(&self, name: &String) -> bool {
         match self {
             ArgumentName::Positional(x) => x == name,
-            ArgumentName::Flag { full, abbrev } => full.contains(name) || abbrev.contains(name),
+            ArgumentName::Flag(map) => map.into_iter().any(|(_, v)| v.contains(name)),
         }
     }
 
@@ -105,7 +94,11 @@ impl ArgumentName {
 
     pub fn is_abbrev_argument(&self) -> bool {
         match self {
-            ArgumentName::Flag { full, abbrev } if full.is_empty() && !abbrev.is_empty() => true,
+            ArgumentName::Flag(map)
+                if map.len() == 1 && map.contains_key(&1) && map.get(&1).unwrap().len() > 0 =>
+            {
+                true
+            }
             _ => false,
         }
     }
@@ -120,28 +113,20 @@ impl ArgumentName {
                 }
             }
             (ArgumentName::Positional(_), ArgumentName::Flag { .. }) => other.overlap(self),
-            (ArgumentName::Flag { full, abbrev }, ArgumentName::Positional(x)) => {
-                if full.contains(x) || abbrev.contains(x) {
+            (ArgumentName::Flag(map), ArgumentName::Positional(x)) => {
+                if map.into_iter().any(|(_, v)| v.contains(x)) {
                     vec![x.clone()]
                 } else {
                     vec![]
                 }
             }
-            (
-                ArgumentName::Flag { .. },
-                ArgumentName::Flag {
-                    full: full2,
-                    abbrev: abbrev2,
-                },
-            ) => {
-                let mut conflicts: Vec<String> = full2
-                    .iter()
-                    .filter(|x| self.contains(x))
-                    .map(|x| x.clone())
-                    .collect();
-                for a in abbrev2.iter() {
-                    if self.contains(a) {
-                        conflicts.push(a.clone());
+            (ArgumentName::Flag(_), ArgumentName::Flag(map2)) => {
+                let mut conflicts: Vec<String> = Vec::new();
+                for (_, v) in map2.into_iter() {
+                    for item in v.into_iter() {
+                        if self.contains(item) {
+                            conflicts.push(item.clone())
+                        }
                     }
                 }
                 conflicts
@@ -152,14 +137,22 @@ impl ArgumentName {
     pub fn names(&self) -> Vec<String> {
         match self {
             ArgumentName::Positional(x) => vec![x.clone()],
-            ArgumentName::Flag { full, .. } => full.clone(),
+            ArgumentName::Flag(map) => {
+                let mut all_names: Vec<String> = Vec::new();
+                for (k, v) in map.into_iter() {
+                    if *k > (1 as usize) {
+                        all_names.extend(v.clone());
+                    }
+                }
+                all_names
+            }
         }
     }
 
     pub fn num_of_identifiers(&self) -> usize {
         match self {
             ArgumentName::Positional(..) => 1,
-            ArgumentName::Flag { full, abbrev } => full.len() + abbrev.len(),
+            ArgumentName::Flag(map) => map.into_iter().map(|(_, v)| v.len()).sum(),
         }
     }
 }
@@ -168,12 +161,14 @@ impl Display for ArgumentName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let builder = match self {
             ArgumentName::Positional(x) => x.clone(),
-            ArgumentName::Flag { full, abbrev } => {
-                let mut full: Vec<String> = full.iter().map(|x| "--".to_string() + x).collect();
+            ArgumentName::Flag(map) => {
+                let mut full: Vec<String> = Vec::new();
+                for (k, v) in map.into_iter() {
+                    let prepend = "-".repeat(*k);
+                    let view: Vec<String> = v.iter().map(|x| prepend.clone() + x).collect();
+                    full.extend(view);
+                }
                 full.sort();
-                let mut abbrev: Vec<String> = abbrev.iter().map(|x| "-".to_string() + x).collect();
-                abbrev.sort();
-                full.append(&mut abbrev);
                 string_vec_to_string(&full, true).clone()
             }
         };
@@ -186,9 +181,12 @@ impl Hash for ArgumentName {
         // TODO do referenes wrk here
         match self {
             ArgumentName::Positional(x) => (&vec![x.clone()]).hash(state),
-            ArgumentName::Flag { full, abbrev } => {
-                full.hash(state);
-                abbrev.hash(state)
+            // TODO is this ok
+            ArgumentName::Flag(map) => {
+                for (k, v) in map.into_iter() {
+                    k.hash(state);
+                    v.hash(state);
+                }
             }
         };
     }
@@ -198,16 +196,7 @@ impl PartialEq for ArgumentName {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Positional(l0), Self::Positional(r0)) => l0 == r0,
-            (
-                Self::Flag {
-                    full: l_full,
-                    abbrev: l_abbrev,
-                },
-                Self::Flag {
-                    full: r_full,
-                    abbrev: r_abbrev,
-                },
-            ) => l_full == r_full && l_abbrev == r_abbrev,
+            (Self::Flag(map_a), Self::Flag(map_b)) => map_a == map_b,
             _ => false,
         }
     }
@@ -215,6 +204,8 @@ impl PartialEq for ArgumentName {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
+
     use crate::{
         argument_error::ArgumentError, argument_name::ArgumentName, argument_parser::PrefixChars,
     };
@@ -237,12 +228,12 @@ mod test {
 
     #[test]
     fn create_flag_arguments() {
+        let mut result: HashMap<usize, Vec<String>> = HashMap::new();
+        result.insert(1, vec!["f".to_string()]);
+        result.insert(2, vec!["foo".to_string()]);
         assert_eq!(
             ArgumentName::new(vec!["--foo", "-f"], &PrefixChars::default()).unwrap(),
-            ArgumentName::Flag {
-                full: vec!["foo".to_string()],
-                abbrev: vec!["f".to_string()]
-            }
+            ArgumentName::Flag(result)
         )
     }
 

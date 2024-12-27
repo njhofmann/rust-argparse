@@ -1,15 +1,16 @@
 use std::{
-    collections::{hash_map, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     env,
     fmt::Display,
+    iter,
 };
 
 use crate::{
-    argument::{self, Action, Argument, NArgs},
+    argument::{Action, Argument, NArgs},
     argument_error::ArgumentError,
     argument_name::ArgumentName,
     parse_result::Namespace,
-    string_vec_to_string, InvalidChoice, FLAG_ARG_ABBREV_LEN, FLAG_ARG_LEN,
+    string_vec_to_string, InvalidChoice,
 };
 use thiserror::Error;
 
@@ -29,22 +30,6 @@ pub enum ParserError {
     InvalidChoice(InvalidChoice),
     #[error("no arguments were found to process remaining raw arguments {0}")]
     UnprocessedRawArguments(String),
-}
-
-#[derive(Debug, PartialEq)]
-pub enum PrefixCharOutcomes {
-    LONG,
-    ABBREV,
-    NONE,
-}
-
-impl PrefixCharOutcomes {
-    fn is_flag(&self) -> bool {
-        match self {
-            PrefixCharOutcomes::NONE => false,
-            _ => true,
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -88,41 +73,36 @@ impl PrefixChars {
         }
     }
 
-    pub fn parse_string(&self, string: &str) -> PrefixCharOutcomes {
-        if string.len() < 2 {
-            PrefixCharOutcomes::NONE
-        } else {
-            let mut chars = string.chars();
-            let a = chars.next().unwrap();
-            let b = chars.next().unwrap();
-            if !self.0 .0.contains(&a) {
-                PrefixCharOutcomes::NONE
-            } else if a == b {
-                if string.len() > 2 {
-                    // TODO is ++ or -- w/ no text valid?
-                    PrefixCharOutcomes::LONG
+    pub fn parse_string(&self, string: &str) -> (String, usize) {
+        for char in self.0 .0.clone().into_iter() {
+            let mut n_matches = 0;
+            for string_char in string.chars() {
+                if char == string_char {
+                    n_matches += 1;
                 } else {
-                    PrefixCharOutcomes::NONE
+                    break;
                 }
-            } else {
-                PrefixCharOutcomes::ABBREV
+            }
+            if n_matches > 0 {
+                let parsed_string = &string[n_matches..];
+                return (parsed_string.to_string(), n_matches);
             }
         }
+        return (string.to_string(), 0);
     }
 
     pub fn display_arg_name(&self, argument: &Argument) -> String {
         match argument.name() {
             ArgumentName::Positional(x) => x.clone(),
-            ArgumentName::Flag { full, abbrev } => {
-                let default = self.0 .1.to_string();
-                if let Some(x) = abbrev.first() {
-                    default + x.as_str()
-                } else {
-                    default.clone()
-                        + default.clone().as_str()
-                        + full.first().expect("this should have a value").as_str()
-                }
-                .to_string()
+            ArgumentName::Flag(map) => {
+                let default: String = self.0 .1.to_string();
+                let mut prefix_counts: Vec<&usize> = map.keys().into_iter().collect();
+                prefix_counts.sort();
+                //let prefix = default.
+                let prefix_size = prefix_counts.first().unwrap();
+                let name: String = map.get(prefix_size).unwrap().first().unwrap().clone();
+                let prefix: String = iter::repeat(default).take(**prefix_size).collect();
+                prefix + &name
             }
         }
     }
@@ -321,12 +301,13 @@ impl ArgumentParser {
         ArgumentError,
     > {
         let handle_overlap = |argument: &Argument| -> Option<Result<Argument, ArgumentError>> {
-            let overlap = argument.name().overlap(arg_name);
+            let mut overlap = argument.name().overlap(arg_name);
             if overlap.is_empty() {
                 Some(Ok(argument.clone()))
             } else {
                 match self.conflict_handler {
                     ConflictHandlingStrategy::Error => {
+                        overlap.sort();
                         Some(Err(ArgumentError::DuplicateArgumentNameValues(
                             string_vec_to_string(&overlap, true),
                         )))
@@ -337,27 +318,25 @@ impl ArgumentParser {
                         } else {
                             // if posn would always have overlap of 1 & be caught above
                             debug_assert!(argument.name().is_flag_argument());
-                            let (mut existing_flags, mut existing_abbrevs) = match &argument.name()
-                            {
-                                ArgumentName::Flag { full, abbrev } => {
-                                    (full.clone(), abbrev.clone())
-                                }
+                            let mut existing_name_map = match &argument.name() {
+                                ArgumentName::Flag(map) => map.clone(),
                                 _ => panic!("argument with posn should have been removed above"),
                             };
 
                             for overlap_name in overlap {
-                                debug_assert!(
-                                    !(existing_abbrevs.contains(&overlap_name)
-                                        && existing_flags.contains(&overlap_name))
-                                );
-                                existing_flags.retain(|x| x != &overlap_name);
-                                existing_abbrevs.retain(|x| x != &overlap_name);
+                                existing_name_map = existing_name_map
+                                    .into_iter()
+                                    .map(|(k, v)| {
+                                        let mut new_v = v.clone();
+                                        new_v.retain(|x| x != &overlap_name);
+                                        (k, new_v)
+                                    })
+                                    .collect();
                             }
 
-                            Some(Ok(argument.with_name(ArgumentName::Flag {
-                                full: existing_flags,
-                                abbrev: existing_abbrevs,
-                            })))
+                            Some(Ok(
+                                argument.with_name(ArgumentName::Flag(existing_name_map.clone()))
+                            ))
                         }
                     }
                 }
@@ -521,11 +500,10 @@ impl ArgumentParser {
                 todo!()
             }
             let dest = dest.unwrap().to_string();
+            let mut dest_arg_map = HashMap::new();
+            dest_arg_map.insert(2 as usize, vec![dest.clone()]);
             let new_dest_argument = Argument::new(
-                ArgumentName::Flag {
-                    full: vec![dest.clone()],
-                    abbrev: vec![],
-                },
+                ArgumentName::Flag(dest_arg_map),
                 Some("extend"),
                 None,
                 None,
@@ -567,15 +545,12 @@ impl ArgumentParser {
         allow_abbrev_mapping.as_ref().map(|x| {
             let mut new_x = x.clone();
             match new_arg.name() {
-                ArgumentName::Flag { full, abbrev } => {
-                    for argument in full {
-                        if argument.len() > 1 {
-                            new_x.insert(argument.clone(), (idx, true));
-                        }
-                    }
-                    for argument in abbrev {
-                        if argument.len() > 1 {
-                            new_x.insert(argument.clone(), (idx, true));
+                ArgumentName::Flag(map) => {
+                    for (_, v) in map.into_iter() {
+                        for argument in v.into_iter() {
+                            if argument.len() > 1 {
+                                new_x.insert(argument.clone(), (idx, true));
+                            }
                         }
                     }
                     new_x
@@ -718,18 +693,15 @@ impl ArgumentParser {
             };
 
             let (found_argument, argument_value) = if cur_raw_arg.is_some()
-                && self
-                    .prefix_chars
-                    .parse_string(cur_raw_arg.unwrap())
-                    .is_flag()
+                && self.prefix_chars.parse_string(cur_raw_arg.unwrap()).1 > 0
+            // TODO redo this check
             {
-                let flag_raw_arg = match self.prefix_chars.parse_string(&cur_raw_arg.unwrap()) {
-                    PrefixCharOutcomes::LONG => cur_raw_arg.unwrap()[FLAG_ARG_LEN..].to_string(),
-                    PrefixCharOutcomes::ABBREV => {
-                        cur_raw_arg.unwrap()[FLAG_ARG_ABBREV_LEN..].to_string()
-                    }
-                    _ => panic!("found non-flag argument"),
+                let (flag_raw_arg, n_prefixes) =
+                    self.prefix_chars.parse_string(&cur_raw_arg.unwrap());
+                if n_prefixes == 0 {
+                    panic!("found non-flag argument")
                 };
+                let flag_raw_arg = flag_raw_arg.to_string();
 
                 // either returns
                 // - single flag argument (long or short)
@@ -805,10 +777,8 @@ impl ArgumentParser {
             let argument_value = if argument_value.is_none() {
                 let end_or_new_flag_arg = |idx: &usize| {
                     idx >= &raw_args.len()
-                        || self
-                            .prefix_chars
-                            .parse_string(&raw_args[idx.clone()])
-                            .is_flag()
+                        || self.prefix_chars.parse_string(&raw_args[idx.clone()]).1 > 0
+                    // TODO redo this check
                 };
 
                 let mut start_idx = idx;
@@ -2143,7 +2113,7 @@ mod test {
             );
             assert_eq!(
                 child.unwrap_err(),
-                ArgumentError::DuplicateArgumentNameValues("[help, h]".to_string())
+                ArgumentError::DuplicateArgumentNameValues("[h, help]".to_string())
             )
         }
 
@@ -2232,5 +2202,30 @@ mod test {
                 ParserError::IncorrectValueCount("[--foo]".to_string(), NArgs::Exact(2), 1)
             );
         }
+    }
+
+    #[test]
+    fn longer_flag_args() {
+        let namespace = ArgumentParser::default()
+            .add_argument::<&str>(
+                vec!["---foo"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap()
+            .parse_args(Some(vec!["---foo".to_string(), "bar".to_string()]))
+            .unwrap();
+        assert_eq!(
+            namespace.get_one_value::<String>("foo").unwrap(),
+            "bar".to_string()
+        );
     }
 }

@@ -519,10 +519,12 @@ impl Argument {
     pub fn flag_values(&self) -> Vec<String> {
         match self.name() {
             ArgumentName::Positional(x) => vec![x.clone()],
-            ArgumentName::Flag { full, abbrev } => {
-                let mut new_vec = full.clone();
-                let mut new_abbrev = abbrev.clone();
-                new_vec.append(&mut new_abbrev);
+            ArgumentName::Flag(map) => {
+                let mut new_vec = Vec::new();
+                for v in map.values().into_iter() {
+                    let mut new_v = v.clone();
+                    new_vec.append(&mut new_v);
+                }
                 new_vec
             }
         }
@@ -541,12 +543,12 @@ impl Argument {
             // if appendconst dest assigned to storing list
             (Action::AppendConst(_), Some(_)) | (_, None) => match &self.name {
                 ArgumentName::Positional(x) => x,
-                ArgumentName::Flag { full, abbrev } => {
-                    if !full.is_empty() {
-                        full.first().unwrap()
-                    } else {
-                        abbrev.first().unwrap()
-                    }
+                ArgumentName::Flag(map) => {
+                    let mut prefix_counts: Vec<&usize> = map.keys().into_iter().collect();
+                    prefix_counts.sort();
+                    let largest_prefix = prefix_counts.last().unwrap();
+                    let fetch_value: &String = map.get(&largest_prefix).unwrap().first().unwrap();
+                    fetch_value
                 }
             },
             (_, Some(d)) => &d,
