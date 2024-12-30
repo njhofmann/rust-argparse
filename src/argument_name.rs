@@ -103,6 +103,13 @@ impl ArgumentName {
         }
     }
 
+    pub fn get_short_flags(&self) -> Vec<String> {
+        match self {
+            ArgumentName::Flag(map) => map.get(&1).map_or(Vec::new(), |x| x.clone()),
+            _ => panic!("tried to retrieve flags from positional argument"),
+        }
+    }
+
     pub fn overlap(&self, other: &ArgumentName) -> Vec<String> {
         match (self, other) {
             (ArgumentName::Positional(x), ArgumentName::Positional(y)) => {
