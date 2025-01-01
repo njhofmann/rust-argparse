@@ -690,7 +690,7 @@ mod actions {
 
         #[test]
         fn append_const() {
-            let namespace = ArgumentParser::default()
+            let parser = ArgumentParser::default()
                 .add_argument::<&str>(
                     vec!["--foo", "-f"],
                     Some("append_const"),
@@ -732,7 +732,8 @@ mod actions {
                     Some("gia"),
                     None,
                 )
-                .unwrap()
+                .unwrap();
+            let namespace = parser
                 .parse_args(Some(vec![
                     "-f".to_string(),
                     "-m".to_string(),
@@ -742,8 +743,19 @@ mod actions {
             assert_eq!(
                 namespace.get_three_value::<String>("gia").unwrap(),
                 ("test".to_string(), "sugar".to_string(), "poppy".to_string())
+            );
+            let namespace = parser
+            .parse_args(Some(vec![
+                "-bmf".to_string()
+            ]))
+            .unwrap();
+            assert_eq!(
+                namespace.get_three_value::<String>("gia").unwrap(),
+                ("poppy".to_string(), "sugar".to_string(), "test".to_string())
             )
         }
+
+        
 
         #[test]
         fn with_parent_parser() {
@@ -810,6 +822,30 @@ mod actions {
                 ]))
                 .unwrap();
             assert_eq!(namespace.get_one_value::<usize>("foo").unwrap(), 3)
+        }
+
+        #[test]
+        fn verbose() {
+            let namespace = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["-v"],
+                    Some("count"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .parse_args(Some(vec![
+                    "-vvv".to_string()
+                ]))
+                .unwrap();
+            assert_eq!(namespace.get_one_value::<usize>("v").unwrap(), 3)
         }
     }
 }
