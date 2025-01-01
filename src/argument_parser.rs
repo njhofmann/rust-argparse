@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     env,
+    f32::consts::E,
     fmt::Display,
     iter, option,
 };
@@ -13,6 +14,9 @@ use crate::{
     string_vec_to_string, InvalidChoice,
 };
 use thiserror::Error;
+
+// if this pseudo-arg is given, everything after is a positional argument
+const ONLY_POSITIONAL_ARGS: &str = "--";
 
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum ParserError {
@@ -428,8 +432,7 @@ impl ArgumentParser {
 
                 if location.is_some() {
                     Ok(location)
-                } else if is_short_flag {
-                    // will try to parse multiple short options in form of "-abc [value]"
+                } else if is_short_flag && argument_name.len() > 1 {
                     Ok(None)
                 } else {
                     Err(ParserError::InvalidFlagArgument(argument_name.clone()))
@@ -444,7 +447,6 @@ impl ArgumentParser {
             let mut arguments = Vec::new();
             for arg in possible_args.chars() {
                 let arg = arg.to_string();
-                println!("{:?}", self.arg_name_mapping);
                 let &(idx, is_flag_arg) = self
                     .arg_name_mapping
                     .get(arg.as_str())
@@ -749,6 +751,7 @@ impl ArgumentParser {
         let mut var_posn_found = false;
         let mut last_arg_was_flag = true;
         let mut set_next_posn_group_idx = false;
+        let mut all_remaining_args_positional = false;
         // staring idx of the last posn arg group
         let mut last_posn_arg_group_idx: Option<usize> = None; // tracks indices in arg_and_raw_arg_range
                                                                // contine to parse so long as posn arguments are left or raw args haven't been looked at (may have flags)
@@ -768,16 +771,33 @@ impl ArgumentParser {
                 Some(raw_args[idx].as_str())
             };
 
-            let (found_arguments, argument_value) = if cur_raw_arg.is_some()
-                && self.prefix_chars.parse_string(cur_raw_arg.unwrap()).1 > 0
-            // TODO redo this check
+            let (flag_raw_arg, n_prefixes) = if cur_raw_arg.is_some() {
+                let cur_raw_arg = cur_raw_arg.unwrap();
+                if cur_raw_arg == ONLY_POSITIONAL_ARGS {
+                    if !all_remaining_args_positional {
+                        all_remaining_args_positional = true;
+                        idx += 1; // move past "--"
+                        continue;
+                    }
+                    (None, None)
+                } else {
+                    let (flag_raw_arg, n_prefixes) = self.prefix_chars.parse_string(cur_raw_arg);
+                    (Some(flag_raw_arg), Some(n_prefixes))
+                }
+            } else {
+                (None, None)
+            };
+
+            let (found_arguments, argument_value) = if !all_remaining_args_positional
+                && cur_raw_arg.is_some()
+                && n_prefixes.unwrap() > 0
             {
-                let (flag_raw_arg, n_prefixes) =
-                    self.prefix_chars.parse_string(&cur_raw_arg.unwrap());
+                let flag_raw_arg = flag_raw_arg.unwrap();
+                let n_prefixes = n_prefixes.unwrap();
+
                 if n_prefixes == 0 {
                     panic!("found non-flag argument")
-                };
-                let flag_raw_arg = flag_raw_arg.to_string();
+                }
 
                 // either returns
                 // - single flag argument (long or short)
@@ -843,7 +863,6 @@ impl ArgumentParser {
                 } else {
                     Some(cur_posn_argument_idx.unwrap() + 1)
                 };
-
                 processed_posn_args.push(found_argument.clone());
                 Ok((vec![found_argument], None))
             }?;
@@ -853,8 +872,12 @@ impl ArgumentParser {
                 // only use arg value on last found arg
                 let argument_value = if !(i == last_arg_idx && argument_value.is_some()) {
                     let end_or_new_flag_arg = |idx: &usize| {
-                        idx >= &raw_args.len()
-                            || self.prefix_chars.parse_string(&raw_args[idx.clone()]).1 > 0
+                        if idx >= &raw_args.len() {
+                            return true;
+                        }
+                        let (_, n_prefixes) =
+                            self.prefix_chars.parse_string(&raw_args[idx.clone()]);
+                        return !all_remaining_args_positional && n_prefixes > 0;
                         // TODO redo this check
                     };
 
@@ -2282,237 +2305,316 @@ mod test {
                 ParserError::IncorrectValueCount("[--foo]".to_string(), NArgs::Exact(2), 1)
             );
         }
-    }
 
-    #[test]
-    fn longer_flag_args() {
-        let namespace = ArgumentParser::default()
-            .add_argument::<&str>(
-                vec!["---foo"],
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap()
-            .parse_args(Some(vec!["---foo".to_string(), "bar".to_string()]))
-            .unwrap();
-        assert_eq!(
-            namespace.get_one_value::<String>("foo").unwrap(),
-            "bar".to_string()
-        );
-    }
+        #[test]
+        fn longer_flag_args() {
+            let namespace = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["---foo"],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .parse_args(Some(vec!["---foo".to_string(), "bar".to_string()]))
+                .unwrap();
+            assert_eq!(
+                namespace.get_one_value::<String>("foo").unwrap(),
+                "bar".to_string()
+            );
+        }
 
-    #[test]
-    fn multiple_short_flags() {
-        let namespace = ArgumentParser::default()
-            .add_argument::<&str>(
-                vec!["-a"],
-                Some("store_true"),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap()
-            .add_argument::<&str>(
-                vec!["-b"],
-                Some("store_true"),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap()
-            .add_argument::<&str>(
-                vec!["-c"],
-                Some("store_true"),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap()
-            .parse_args(Some(vec!["-abc".to_string()]))
-            .unwrap();
-        assert_eq!(namespace.get_one_value::<bool>("a").unwrap(), true);
-        assert_eq!(namespace.get_one_value::<bool>("b").unwrap(), true);
-        assert_eq!(namespace.get_one_value::<bool>("c").unwrap(), true);
-    }
+        #[test]
+        fn multiple_short_flags() {
+            let namespace = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["-a"],
+                    Some("store_true"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["-b"],
+                    Some("store_true"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["-c"],
+                    Some("store_true"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .parse_args(Some(vec!["-abc".to_string()]))
+                .unwrap();
+            assert_eq!(namespace.get_one_value::<bool>("a").unwrap(), true);
+            assert_eq!(namespace.get_one_value::<bool>("b").unwrap(), true);
+            assert_eq!(namespace.get_one_value::<bool>("c").unwrap(), true);
+        }
 
-    #[test]
-    fn multiple_short_flags_with_optional_value() {
-        let namespace = ArgumentParser::default()
-            .add_argument::<&str>(
-                vec!["-a"],
-                Some("store_true"),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap()
-            .add_argument::<&str>(
-                vec!["-b"],
-                Some("store_true"),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap()
-            .add_argument::<&str>(
-                vec!["-c"],
-                None,
-                Some(NArgs::Exact(1)),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap()
-            .parse_args(Some(vec!["-abcD".to_string()]))
-            .unwrap();
-        assert_eq!(namespace.get_one_value::<bool>("a").unwrap(), true);
-        assert_eq!(namespace.get_one_value::<bool>("b").unwrap(), true);
-        assert_eq!(
-            namespace.get_one_value::<String>("c").unwrap(),
-            "D".to_string()
-        );
-    }
+        #[test]
+        fn multiple_short_flags_with_optional_value() {
+            let namespace = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["-a"],
+                    Some("store_true"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["-b"],
+                    Some("store_true"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["-c"],
+                    None,
+                    Some(NArgs::Exact(1)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .parse_args(Some(vec!["-abcD".to_string()]))
+                .unwrap();
+            assert_eq!(namespace.get_one_value::<bool>("a").unwrap(), true);
+            assert_eq!(namespace.get_one_value::<bool>("b").unwrap(), true);
+            assert_eq!(
+                namespace.get_one_value::<String>("c").unwrap(),
+                "D".to_string()
+            );
+        }
 
-    #[test]
-    fn multiple_short_flags_invalid_flag() {
-        let parser = ArgumentParser::default()
-            .add_argument::<&str>(
-                vec!["-a"],
-                Some("store_true"),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap()
-            .add_argument::<&str>(
-                vec!["-b"],
-                Some("store_true"),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap()
-            .parse_args(Some(vec!["-acb".to_string()]))
-            .unwrap_err();
-        assert_eq!(parser, ParserError::InvalidFlagArgument("c".to_string()));
-    }
+        #[test]
+        fn multiple_short_flags_invalid_flag() {
+            let parser = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["-a"],
+                    Some("store_true"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["-b"],
+                    Some("store_true"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .parse_args(Some(vec!["-acb".to_string()]))
+                .unwrap_err();
+            assert_eq!(parser, ParserError::InvalidFlagArgument("c".to_string()));
+        }
 
-    #[test]
-    fn multiple_short_flags_with_optional_arg_invalid_nargs() {
-        let parser = ArgumentParser::default()
-            .add_argument::<&str>(
-                vec!["-a"],
-                Some("store_true"),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap()
-            .add_argument::<&str>(
-                vec!["-b"],
-                Some("store_true"),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap()
-            .parse_args(Some(vec!["-abC".to_string()]))
-            .unwrap_err();
-        assert_eq!(
-            parser,
-            ParserError::IncorrectValueCount("[-b]".to_string(), NArgs::Exact(0), 1)
-        );
-    }
+        #[test]
+        fn multiple_short_flags_with_optional_arg_invalid_nargs() {
+            let parser = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["-a"],
+                    Some("store_true"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["-b"],
+                    Some("store_true"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .parse_args(Some(vec!["-abC".to_string()]))
+                .unwrap_err();
+            assert_eq!(
+                parser,
+                ParserError::IncorrectValueCount("[-b]".to_string(), NArgs::Exact(0), 1)
+            );
+        }
 
-    #[test]
-    fn multiple_short_flags_invalid_nargs() {
-        let parser = ArgumentParser::default()
-            .add_argument::<&str>(
-                vec!["-a"],
-                None,
-                Some(NArgs::Exact(2)),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap()
-            .parse_args(Some(vec!["-a".to_string()]))
-            .unwrap_err();
-        assert_eq!(
-            parser,
-            ParserError::IncorrectValueCount("[-a]".to_string(), NArgs::Exact(2), 0)
-        );
+        #[test]
+        fn multiple_short_flags_invalid_nargs() {
+            let parser = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["-a"],
+                    None,
+                    Some(NArgs::Exact(2)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .parse_args(Some(vec!["-a".to_string()]))
+                .unwrap_err();
+            assert_eq!(
+                parser,
+                ParserError::IncorrectValueCount("[-a]".to_string(), NArgs::Exact(2), 0)
+            );
+        }
+
+        #[test]
+        fn all_remaining_args_positional() {
+            let parser = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["a"],
+                    None,
+                    Some(NArgs::Exact(1)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+            let namespace_err = parser.parse_args(Some(vec!["-g".to_string()])).unwrap_err();
+            assert_eq!(
+                namespace_err,
+                ParserError::InvalidFlagArgument("g".to_string())
+            );
+            let namespace = parser
+                .parse_args(Some(vec!["--".to_string(), "-g".to_string()]))
+                .unwrap();
+            assert_eq!(
+                namespace.get_one_value::<String>("a").unwrap(),
+                "-g".to_string()
+            );
+        }
+
+        #[test]
+        fn all_remaining_args_positional_with_flag() {
+            let namespace = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["a"],
+                    None,
+                    Some(NArgs::Exact(1)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["-b"],
+                    None,
+                    Some(NArgs::Exact(1)),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .parse_args(Some(vec![
+                    "-b".to_string(),
+                    "f".to_string(),
+                    "--".to_string(),
+                    "-g".to_string(),
+                ]))
+                .unwrap();
+            assert_eq!(
+                namespace.get_one_value::<String>("a").unwrap(),
+                "-g".to_string()
+            );
+            assert_eq!(
+                namespace.get_one_value::<String>("b").unwrap(),
+                "f".to_string()
+            );
+        }
     }
 }
