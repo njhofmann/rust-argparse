@@ -698,7 +698,10 @@ mod test {
                 None,
             )
             .unwrap_err(),
-            ArgumentError::InvalidChoice(InvalidChoice("c".to_string(), "[a, b]".to_string())),
+            ArgumentError::ChoicesError(ChoicesError::InvalidChoice(InvalidChoice(
+                "c".to_string(),
+                "[a, b]".to_string()
+            ))),
         )
     }
 

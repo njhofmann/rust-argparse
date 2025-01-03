@@ -348,7 +348,8 @@ mod test {
 
     mod parsing {
         use crate::{
-            argument_parser::ParsingError, choices::ChoicesError, nargs::NArgs, parse_result::test::setup_parser_error, InvalidChoice
+            argument_parser::ParsingError, choices::ChoicesError, nargs::NArgs,
+            parse_result::test::setup_parser_error, InvalidChoice,
         };
 
         #[test]

@@ -5,7 +5,15 @@ use std::{
 };
 
 use crate::{
-    action::Action, argument::{Argument, ArgumentError}, argument_name::{ArgumentName, ArgumentNameError}, choices::ChoicesError, conclict_handling_strategy::{ConflictHandlingStrategy, ConflictHandlingStrategyError}, nargs::NArgs, parse_result::Namespace, prefix_chars::{PrefixChars, PrefixCharsError}, string_vec_to_string, InvalidChoice
+    action::Action,
+    argument::{Argument, ArgumentError},
+    argument_name::{ArgumentName, ArgumentNameError},
+    choices::ChoicesError,
+    conclict_handling_strategy::{ConflictHandlingStrategy, ConflictHandlingStrategyError},
+    nargs::NArgs,
+    parse_result::Namespace,
+    prefix_chars::{PrefixChars, PrefixCharsError},
+    string_vec_to_string, InvalidChoice,
 };
 use thiserror::Error;
 
@@ -55,7 +63,7 @@ pub enum ParsingError {
     UnprocessedRawArguments(String),
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum SubparserError {
     #[error("a subparser with the name \"{0}\" has already been registered")]
     DuplicateNameInParser(String),
@@ -85,7 +93,10 @@ impl SubparserManager {
         // TODO action, dest, metavar
         // TODO unsupported: parser_class
         SubparserManager {
-            title: title.map(|x| x.to_string()),
+            title: title.map_or_else(
+                || description.map(|_| "subcommands".to_string()),
+                |x| Some(x.to_string()),
+            ),
             description: description.map(|x| x.to_string()),
             prog: prog.map(|x| x.to_string()),
             help: help.map(|x| x.to_string()),
@@ -146,6 +157,12 @@ impl SubparserManager {
             }
         }
         Ok(())
+    }
+}
+
+impl Default for SubparserManager {
+    fn default() -> Self {
+        SubparserManager::new(None, None, None, None, None)
     }
 }
 
@@ -393,10 +410,11 @@ impl ArgumentParser {
                 .into_iter()
                 .filter_map(|manager| manager.get_subparser(name.to_string()))
                 .collect();
-            if possible_parsers.len() > 1 {
-                panic!("duplicate subparser names should've been caught when adding them")
+            match possible_parsers.len() {
+                0 => None,
+                1 => Some(&possible_parsers.first().unwrap()),
+                _ => panic!("duplicate subparser names should've been caught when adding them"),
             }
-            Some(&possible_parsers.first().unwrap())
         }
     }
 
