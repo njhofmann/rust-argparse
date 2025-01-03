@@ -3,9 +3,23 @@ use std::fmt::Display;
 use std::hash::Hash;
 use std::hash::Hasher;
 
-use crate::argument_error::ArgumentError;
-use crate::argument_parser::PrefixChars;
+use crate::prefix_chars;
+use prefix_chars::PrefixChars;
+use thiserror::Error;
+
 use crate::string_vec_to_string;
+
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum ArgumentNameError {
+    #[error("no argument names given")]
+    EmptyArgumentName,
+    #[error("given a mix of positional arguments & flag argument names")]
+    MixedArguments,
+    #[error("given multiple positional argument names")]
+    MultiplePositionalArgumentNames,
+    #[error("duplicate argument name {0} found")]
+    DuplicateArgumentName(String),
+}
 
 #[derive(Clone, Debug, Eq)]
 pub enum ArgumentName {
@@ -17,9 +31,9 @@ impl ArgumentName {
     pub fn new(
         raw_arg_names: Vec<&str>,
         prefix_chars: &PrefixChars,
-    ) -> Result<ArgumentName, ArgumentError> {
+    ) -> Result<ArgumentName, ArgumentNameError> {
         if raw_arg_names.is_empty() {
-            Err(ArgumentError::EmptyArgumentName)
+            Err(ArgumentNameError::EmptyArgumentName)
         } else if raw_arg_names.len() == 1 {
             let raw_arg_name = raw_arg_names.first().unwrap();
             let (parsed_arg_name, n_prefixes) = prefix_chars.parse_string(raw_arg_name);
@@ -38,22 +52,22 @@ impl ArgumentName {
                 let (parsed_arg_name, n_prefixes) = prefix_chars.parse_string(raw_arg_name);
                 if n_prefixes == 0 {
                     if !map.is_empty() {
-                        return Err(ArgumentError::MixedArguments);
+                        return Err(ArgumentNameError::MixedArguments);
                     } else if posn_arg_found {
-                        return Err(ArgumentError::MultiplePositionalArgumentNames);
+                        return Err(ArgumentNameError::MultiplePositionalArgumentNames);
                     } else {
                         posn_arg_found = true;
                     }
                 } else {
                     if posn_arg_found {
-                        return Err(ArgumentError::MixedArguments);
+                        return Err(ArgumentNameError::MixedArguments);
                     }
                     if map
                         .clone()
                         .into_iter()
                         .any(|(_, v)| v.contains(&parsed_arg_name.to_string()))
                     {
-                        return Err(ArgumentError::DuplicateArgumentName(
+                        return Err(ArgumentNameError::DuplicateArgumentName(
                             parsed_arg_name.to_string(),
                         ));
                     }
@@ -214,14 +228,15 @@ mod test {
     use std::collections::HashMap;
 
     use crate::{
-        argument_error::ArgumentError, argument_name::ArgumentName, argument_parser::PrefixChars,
+        argument_name::{ArgumentName, ArgumentNameError},
+        prefix_chars::PrefixChars,
     };
 
     #[test]
     fn empty_argument() {
         assert_eq!(
             ArgumentName::new(vec![], &PrefixChars::default()).unwrap_err(),
-            ArgumentError::EmptyArgumentName
+            ArgumentNameError::EmptyArgumentName
         )
     }
 
@@ -268,7 +283,7 @@ mod test {
     fn duplicate_flag_arguments() {
         assert_eq!(
             ArgumentName::new(vec!["--foo", "-f", "--foo"], &PrefixChars::default()).unwrap_err(),
-            ArgumentError::DuplicateArgumentName("foo".to_string())
+            ArgumentNameError::DuplicateArgumentName("foo".to_string())
         )
     }
 
@@ -276,7 +291,7 @@ mod test {
     fn flag_and_positional_arguments_mixed() {
         assert_eq!(
             ArgumentName::new(vec!["--foo", "bar"], &PrefixChars::default()).unwrap_err(),
-            ArgumentError::MixedArguments
+            ArgumentNameError::MixedArguments
         )
     }
 
@@ -377,7 +392,7 @@ mod test {
     fn multiple_positional_argument() {
         assert_eq!(
             ArgumentName::new(vec!["foo", "gor"], &PrefixChars::default()).unwrap_err(),
-            ArgumentError::MultiplePositionalArgumentNames
+            ArgumentNameError::MultiplePositionalArgumentNames
         )
     }
 }

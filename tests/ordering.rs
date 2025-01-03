@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod ordering {
-    use py_arg_parse::argument::NArgs;
     use py_arg_parse::argument_parser::ArgumentParser;
+    use py_arg_parse::nargs::NArgs;
     use py_arg_parse::parse_result::Namespace;
 
     #[test]

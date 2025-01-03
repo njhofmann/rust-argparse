@@ -1,222 +1,55 @@
-use crate::argument_error::ArgumentError;
-use crate::argument_parser::PrefixChars;
+use crate::action::{Action, ActionError};
+use crate::argument_name::ArgumentNameError;
+use crate::choices::{Choices, ChoicesError};
+use crate::nargs::NArgs;
+use crate::prefix_chars::{PrefixChars, PrefixCharsError};
 use crate::InvalidChoice;
 use crate::{argument_name::ArgumentName, string_vec_to_string};
 use std::fmt::format;
+use std::fmt::Display;
 use std::hash::Hash;
 use std::hash::Hasher;
-use std::{collections::HashSet, fmt::Display};
+use std::iter;
 use thiserror::Error;
 
-const HELP_STRING: &str = "help";
-const APPEND_CONST_STRING: &str = "append_const";
-const STORE_CONST_STRING: &str = "store_const";
-const STORE_STRING: &str = "store";
-const VERSION_STRING: &str = "version";
-const EXTEND_STRING: &str = "extend";
-const APPEND_STRING: &str = "append";
-const STORE_TRUE_STRING: &str = "store_true";
-const STORE_FALSE_STRING: &str = "store_false";
-const COUNT_STRING: &str = "count";
-
 #[derive(Error, Debug, PartialEq, Eq)]
-pub enum ActionError {
-    #[error("constant given for a action that isn't'append_const' or 'store_const'")]
-    MissingConstant,
-    #[error("arguments with 'append_const' must be given a destination")]
-    InvalidActionForConstant,
-    #[error("arguments with 'append_const' must be given a destination")]
-    MissingDestination,
-    #[error("destination given for a non-'append_const' action")]
-    InvalidActionForDestination,
-    #[error("arguments with 'version' action must be given a version")]
-    MissingVersion,
-    #[error("version given for a non-'version' action")]
-    InvalidActionForVersion,
-    #[error("positional argument given non-store action {0}")]
-    PositionalArgumentGivenNonStoreAction(String),
-    #[error("{0} is not a supported Action")]
-    InvalidAction(String),
+pub enum ArgumentError {
+    #[error("{0}")]
+    ActionError(ActionError),
+    #[error("{0}")]
+    PrefixCharsError(PrefixCharsError),
+    #[error("{0}")]
+    InvalidChoice(InvalidChoice),
+    #[error("{0}")]
+    ArgumentNameError(ArgumentNameError),
+    #[error("{0}")]
+    ChoicesError(ChoicesError),
+    #[error("required argument {0} given default value {1}")]
+    RequiredArgumentDefaultValueGiven(String, String),
+    #[error("given default value has length {0} but expected {1} arguments")]
+    InvalidDefaultValueLength(usize, String),
+    #[error("given choice \"{0}\" value has length {1} but expected {2} arguments")]
+    InvalidChoiceLength(String, usize, String),
+    #[error("found duplicate argument name values {0}")]
+    DuplicateArgumentNameValues(String),
+    #[error("required is reserved for flag arguments")]
+    RequiredMarkedForPositionalArgument,
+    #[error("non-required argument {0} missing  adefault value")]
+    NonRequiredArgumentNotGivenDefaultValue(String),
+    #[error("start of NArgs::Range {0} is >= than end {1}")]
+    InvalidRangeSize(usize, usize),
+    #[error("nargs given for action {0} which doesn't expect argument values")]
+    InvalidActionForNArgs(String),
+    #[error("default value given to action {0}, only allowed for append & store")]
+    DefaultGivenForUnsupportedAction(String),
+    #[error("choices given to unsupported action {0}, choices only supported for actions store, append, & extend")]
+    ChoicesGivenForUnsupportedAction(String),
+    #[error("required given to unsupported action")]
+    RequiredGivenToUnsupportedAction,
+    #[error("destination given for positional argument, destination is already set based off postional argument name")]
+    DestinationGivenForPositionalArgument,
     #[error("can't have exactly zero arguments for store action; try store_const, store_true, or store_false actions")]
     ZeroExactNArgForStoreAction,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Action {
-    Store(Vec<String>),
-    StoreConst(Vec<String>),
-    Append(Vec<String>),
-    AppendConst(Vec<String>), // this is handled in argumentparser
-    Count(usize),
-    Help,
-    Version(String),
-    Extend(Vec<String>),
-}
-
-impl Action {
-    fn new(
-        action: &str,
-        is_flag_argument: bool,
-        constant: Option<Vec<String>>,
-        version: Option<&str>,
-        dest: Option<&str>,
-    ) -> Result<Action, ActionError> {
-        match (action, &constant) {
-            (STORE_CONST_STRING, None) | (APPEND_CONST_STRING, None) => {
-                Err(ActionError::MissingConstant)
-            }
-            (STORE_CONST_STRING, Some(_)) | (APPEND_CONST_STRING, Some(_)) | (_, None) => Ok(()),
-            (_, Some(_)) => Err(ActionError::InvalidActionForConstant),
-        }?;
-
-        match (action, dest) {
-            (APPEND_CONST_STRING, None) => Err(ActionError::MissingDestination),
-            (APPEND_CONST_STRING, Some(_)) | (_, None) => Ok(()),
-            (_, Some(_)) => Err(ActionError::InvalidActionForDestination),
-        }?;
-
-        match (action, version) {
-            (VERSION_STRING, None) => Err(ActionError::MissingVersion),
-            (VERSION_STRING, Some(x)) if x.is_empty() => Err(ActionError::MissingVersion),
-            (_, Some(_)) => Err(ActionError::InvalidActionForVersion),
-            _ => Ok(()),
-        }?;
-
-        let action = match action {
-            STORE_STRING => Ok(Action::Store(vec![])),
-            STORE_CONST_STRING => Ok(Action::StoreConst(constant.unwrap())),
-            STORE_TRUE_STRING => Ok(Action::StoreConst(vec!["true".to_string()])),
-            STORE_FALSE_STRING => Ok(Action::StoreConst(vec!["false".to_string()])),
-            APPEND_STRING => Ok(Action::Append(vec![])),
-            APPEND_CONST_STRING => Ok(Action::AppendConst(constant.unwrap())),
-            COUNT_STRING => Ok(Action::Count(0)),
-            HELP_STRING => Ok(Action::Help),
-            VERSION_STRING => Ok(Action::Version(version.unwrap().to_string())),
-            EXTEND_STRING => Ok(Action::Extend(vec![])),
-            x => Err(ActionError::InvalidAction(x.to_string())),
-        }?;
-
-        match action {
-            Action::Store(_) if !is_flag_argument => Err(
-                ActionError::PositionalArgumentGivenNonStoreAction((&action).to_string()),
-            ),
-            action => Ok(action),
-        }
-    }
-}
-
-impl Display for Action {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let result = match self {
-            Action::Store(_) => STORE_STRING,
-            Action::StoreConst(c) => {
-                if c.len() == 1 {
-                    match c.first().unwrap().as_str() {
-                        "true" => STORE_TRUE_STRING,
-                        "false" => STORE_FALSE_STRING,
-                        _ => STORE_CONST_STRING,
-                    }
-                } else {
-                    STORE_CONST_STRING
-                }
-            }
-            Action::Append(_) => APPEND_STRING,
-            Action::AppendConst(_) => APPEND_CONST_STRING,
-            Action::Count(_) => COUNT_STRING,
-            Action::Help => HELP_STRING,
-            Action::Version(_) => VERSION_STRING,
-            Action::Extend(_) => EXTEND_STRING,
-        };
-        write!(f, "{}", result)
-    }
-}
-
-#[derive(Clone, Debug, Copy, PartialEq, Eq)]
-pub enum NArgs {
-    Exact(usize),
-    ZeroOrOne, // ?
-    AnyNumber, // *
-    OneOrMore, // +
-}
-
-impl NArgs {
-    pub fn is_valid_number(&self, x: usize) -> bool {
-        match self {
-            NArgs::Exact(n) => n == &x,
-            NArgs::ZeroOrOne => x < 2,
-            NArgs::AnyNumber => true,
-            NArgs::OneOrMore => x > 0,
-        }
-    }
-
-    pub fn can_be_zero(&self) -> bool {
-        match self {
-            NArgs::Exact(x) if x != &0 => false,
-            NArgs::OneOrMore => false,
-            _ => true,
-        }
-    }
-
-    pub fn is_variable(&self) -> bool {
-        // variable means no bound on size
-        match self {
-            NArgs::AnyNumber | NArgs::OneOrMore => true,
-            _ => false,
-        }
-    }
-
-    pub fn min_n_required_args(&self) -> usize {
-        match self {
-            NArgs::Exact(n) => n.clone(),
-            NArgs::OneOrMore => 1,
-            _ => 0,
-        }
-    }
-}
-
-impl Display for NArgs {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                NArgs::Exact(n) => n.to_string(),
-                NArgs::ZeroOrOne => "zero or one ('?')".to_string(),
-                NArgs::AnyNumber => "any number ('*')".to_string(),
-                NArgs::OneOrMore => "at least one ('+')".to_string(),
-            }
-        )
-    }
-}
-
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
-pub struct Choices(Vec<Vec<String>>);
-
-impl Choices {
-    fn new(choices: Vec<Vec<String>>) -> Choices {
-        Choices(choices)
-    }
-    pub fn arg_value_in_choices(&self, raw_arg: &Vec<String>) -> Result<(), InvalidChoice> {
-        if self.0.contains(raw_arg) {
-            Ok(())
-        } else {
-            Err(InvalidChoice(
-                string_vec_to_string(raw_arg, raw_arg.len() != 1),
-                self.to_string(),
-            ))
-        }
-    }
-}
-
-impl Display for Choices {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let choices_strs: Vec<String> = self
-            .0
-            .iter()
-            .map(|x| string_vec_to_string(x, x.len() != 1))
-            .collect();
-        write!(f, "{}", string_vec_to_string(&choices_strs, true))
-    }
 }
 
 #[derive(Clone, Debug, Eq)]
@@ -314,7 +147,7 @@ impl Argument {
         let action = match action {
             None => Ok(Action::Store(vec![])),
             Some(x) => Action::new(x, name.is_flag_argument(), constant, version, dest)
-                .map_err(|e| ArgumentError::ActionError(e)),
+                .map_err(ArgumentError::ActionError),
         }?;
 
         if !name.is_flag_argument() && required.is_some() {
@@ -339,9 +172,9 @@ impl Argument {
 
         let nargs_given = nargs.is_some();
         let nargs = match (&action, nargs) {
-            (Action::Store(_), Some(NArgs::Exact(0))) => Err(ArgumentError::ActionError(
-                ActionError::ZeroExactNArgForStoreAction,
-            )),
+            (Action::Store(_), Some(NArgs::Exact(0))) => {
+                Err(ArgumentError::ZeroExactNArgForStoreAction)
+            }
             (Action::StoreConst(_), Some(_))
             | (Action::AppendConst(_), Some(_))
             | (Action::Version(_), Some(_))
@@ -390,30 +223,19 @@ impl Argument {
 
         let choices = choices
             .map(|choices| {
-                if choices.is_empty() || choices.len() == 1 {
-                    return Err(ArgumentError::EmptyOrSingleChoice);
-                }
-
-                let mut seen_choices: HashSet<Vec<String>> = HashSet::new();
+                let parsed_choices = Choices::new(&choices).map_err(ArgumentError::ChoicesError)?;
                 if nargs_given {
-                    for choice in choices.iter() {
+                    for choice in choices.into_iter() {
                         if !nargs.is_valid_number(choice.len()) {
                             return Err(ArgumentError::InvalidChoiceLength(
-                                string_vec_to_string(choice, choice.len() != 1),
+                                string_vec_to_string(&choice.clone(), choice.len() != 1),
                                 choice.len(),
                                 nargs.to_string(),
                             ));
                         }
-
-                        if !seen_choices.insert(choice.clone()) {
-                            return Err(ArgumentError::DuplicateChoice(string_vec_to_string(
-                                choice,
-                                choice.len() != 1,
-                            )));
-                        }
                     }
                 }
-                Ok(Choices::new(choices))
+                Ok(parsed_choices)
             })
             .transpose()?;
 
@@ -438,7 +260,7 @@ impl Argument {
                 .as_ref()
                 .unwrap()
                 .arg_value_in_choices(&default.as_ref().unwrap())
-                .map_err(|x| ArgumentError::InvalidChoice(x))?
+                .map_err(ArgumentError::ChoicesError)?
         };
 
         Ok(Argument {
@@ -500,7 +322,7 @@ impl Argument {
         }
     }
 
-    pub fn arg_value_in_choices(&self, raw_arg: &Vec<String>) -> Result<(), InvalidChoice> {
+    pub fn arg_value_in_choices(&self, raw_arg: &Vec<String>) -> Result<(), ChoicesError> {
         self.choices
             .as_ref()
             .map_or(Ok(()), |x| x.arg_value_in_choices(raw_arg))
@@ -555,6 +377,22 @@ impl Argument {
         }
     }
 
+    pub fn display_arg_name(&self, prefix_chars: &PrefixChars) -> String {
+        match self.name() {
+            ArgumentName::Positional(x) => x.clone(),
+            ArgumentName::Flag(map) => {
+                let default: String = prefix_chars.default_char().to_string();
+                let mut prefix_counts: Vec<&usize> = map.keys().into_iter().collect();
+                prefix_counts.sort();
+                //let prefix = default.
+                let prefix_size = prefix_counts.first().unwrap();
+                let name: String = map.get(prefix_size).unwrap().first().unwrap().clone();
+                let prefix: String = iter::repeat(default).take(**prefix_size).collect();
+                prefix + &name
+            }
+        }
+    }
+
     pub fn usage_display(&self, prefix_chars: &PrefixChars) -> String {
         let mut builder = "".to_string();
 
@@ -562,7 +400,7 @@ impl Argument {
             builder += "[";
         }
 
-        let binding = prefix_chars.display_arg_name(self).to_string();
+        let binding = self.display_arg_name(prefix_chars).to_string();
         let binding2 = self.display_name();
         builder += match (self.name.is_flag_argument(), self.nargs()) {
             (false, NArgs::ZeroOrOne) | (false, NArgs::AnyNumber) | (false, NArgs::Exact(_)) => "",
@@ -634,9 +472,10 @@ mod test {
     use std::vec;
 
     use crate::{
-        argument::{Action, ActionError, Argument, ArgumentError, Choices, NArgs},
+        argument::{Action, Argument, ArgumentError, Choices, NArgs},
         argument_name::ArgumentName,
-        argument_parser::PrefixChars,
+        choices::ChoicesError,
+        prefix_chars::PrefixChars,
         InvalidChoice,
     };
 
@@ -730,10 +569,9 @@ mod test {
                 required: true,
                 action: Action::Store(vec![]),
                 help: None,
-                choices: Some(Choices::new(vec![
-                    vec!["a".to_string()],
-                    vec!["c".to_string()]
-                ])),
+                choices: Some(
+                    Choices::new(&vec![vec!["a".to_string()], vec!["c".to_string()]]).unwrap()
+                ),
                 default: None,
                 nargs: NArgs::Exact(1),
                 metavar: None,
@@ -760,7 +598,7 @@ mod test {
                 None
             )
             .unwrap_err(),
-            ArgumentError::ActionError(ActionError::ZeroExactNArgForStoreAction)
+            ArgumentError::ZeroExactNArgForStoreAction
         )
     }
 
@@ -923,7 +761,7 @@ mod test {
                 None
             )
             .unwrap_err(),
-            ArgumentError::DuplicateChoice("a".to_string()),
+            ArgumentError::ChoicesError(ChoicesError::DuplicateChoice("a".to_string())),
         )
     }
 
@@ -944,7 +782,7 @@ mod test {
                 None
             )
             .unwrap_err(),
-            ArgumentError::EmptyOrSingleChoice,
+            ArgumentError::ChoicesError(ChoicesError::InsufficientChoices),
         )
     }
 
@@ -965,7 +803,7 @@ mod test {
                 None
             )
             .unwrap_err(),
-            ArgumentError::EmptyOrSingleChoice,
+            ArgumentError::ChoicesError(ChoicesError::InsufficientChoices),
         )
     }
 }

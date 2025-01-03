@@ -2,7 +2,7 @@ use std::{any::type_name, collections::HashMap, fmt::Debug, ops::Index, str::Fro
 
 use thiserror::Error;
 
-use crate::{argument::Action, Argument};
+use crate::{action::Action, Argument};
 
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum RetrievalError {
@@ -14,7 +14,7 @@ pub enum RetrievalError {
     ConversionError(String, String, String),
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Namespace(HashMap<String, Argument>);
 
 impl Index<&str> for Namespace {
@@ -28,6 +28,15 @@ impl Index<&str> for Namespace {
 impl Namespace {
     pub fn new<'a>(found_values: HashMap<String, Argument>) -> Namespace {
         Namespace(found_values)
+    }
+
+    // TODO make this not public only in module
+    pub fn extend(&self, other: Namespace) -> Namespace {
+        let mut new_namespace = self.clone();
+        for (k, v) in other.0.into_iter() {
+            new_namespace.0.insert(k, v);
+        }
+        new_namespace
     }
 
     pub fn contains(&self, arg: &str) -> bool {
@@ -157,8 +166,8 @@ impl Namespace {
 mod test {
 
     use crate::{
-        argument::NArgs,
-        argument_parser::{ArgumentParser, ParserError},
+        argument_parser::{ArgumentParser, ParsingError},
+        nargs::NArgs,
     };
 
     use super::Namespace;
@@ -319,7 +328,7 @@ mod test {
         .unwrap()
     }
 
-    fn setup_parser_error(raw_args: Vec<&str>) -> ParserError {
+    fn setup_parser_error(raw_args: Vec<&str>) -> ParsingError {
         get_parsed_results(raw_args).unwrap_err()
     }
 
@@ -332,15 +341,14 @@ mod test {
         get_parsed_results(raw_args).unwrap()
     }
 
-    fn get_parsed_results(raw_args: Vec<&str>) -> Result<Namespace, ParserError> {
+    fn get_parsed_results(raw_args: Vec<&str>) -> Result<Namespace, ParsingError> {
         let raw_args = raw_args.into_iter().map(|x| x.to_string()).collect();
         setup_parser().parse_args(Some(raw_args))
     }
 
     mod parsing {
         use crate::{
-            argument::NArgs, argument_parser::ParserError, parse_result::test::setup_parser_error,
-            InvalidChoice,
+            argument_parser::ParsingError, choices::ChoicesError, nargs::NArgs, parse_result::test::setup_parser_error, InvalidChoice
         };
 
         #[test]
@@ -354,7 +362,7 @@ mod test {
                     "three", "--foo4", "one", "two", "three", "four", "--foo5", "one", "two",
                     "three", "four",
                 ]),
-                ParserError::IncorrectValueCount("[--foo5]".to_string(), NArgs::Exact(5), 4)
+                ParsingError::IncorrectValueCount("[--foo5]".to_string(), NArgs::Exact(5), 4)
             )
         }
 
@@ -362,7 +370,7 @@ mod test {
         fn incorrect_positional_arguments_value_count_out_of_bounds() {
             assert_eq!(
                 setup_parser_error(vec!["val1", "val2", "val3"]),
-                ParserError::IncorrectValueCount("boo".to_string(), NArgs::Exact(2), 1)
+                ParsingError::IncorrectValueCount("boo".to_string(), NArgs::Exact(2), 1)
             )
         }
 
@@ -374,7 +382,7 @@ mod test {
                     "--foo4", "one", "two", "three", "four", "--foo5", "one", "two", "three",
                     "four",
                 ]),
-                ParserError::IncorrectValueCount("boo".to_string(), NArgs::Exact(2), 1)
+                ParsingError::IncorrectValueCount("boo".to_string(), NArgs::Exact(2), 1)
             )
         }
 
@@ -385,7 +393,7 @@ mod test {
                     "val1", "val2", "val3", "val4", "--foo4", "one", "two", "three", "four",
                     "--foo5", "one", "two", "three", "four", "five",
                 ]),
-                ParserError::MissingRequiredFlagArguments("[[--foo1], [--foo3]]".to_string())
+                ParsingError::MissingRequiredFlagArguments("[[--foo1], [--foo3]]".to_string())
             )
         }
 
@@ -397,7 +405,7 @@ mod test {
                     "three", "--foo4", "one", "two", "three", "four", "--foo5", "one", "two",
                     "three", "four", "five"
                 ]),
-                ParserError::InvalidFlagArgument("foo0".to_string(),)
+                ParsingError::InvalidFlagArgument("foo0".to_string(),)
             )
         }
 
@@ -409,7 +417,7 @@ mod test {
                     "one", "two", "three", "--foo4", "one", "two", "three", "four", "--foo5",
                     "one", "two", "three", "four", "five"
                 ]),
-                ParserError::DuplicateFlagArgument("[--foo1]".to_string())
+                ParsingError::DuplicateFlagArgument("[--foo1]".to_string())
             )
         }
 
@@ -421,10 +429,10 @@ mod test {
                     "one", "two", "three", "--foo4", "one", "two", "three", "four", "--foo5",
                     "one", "two", "three", "four", "five"
                 ]),
-                ParserError::InvalidChoice(InvalidChoice(
+                ParsingError::ChoicesError(ChoicesError::InvalidChoice(InvalidChoice(
                     "[3, 4]".to_string(),
-                    "[[one, two], [1, 2]]".to_string()
-                ))
+                    "[[1, 2], [one, two]]".to_string()
+                )))
             )
         }
     }
@@ -710,7 +718,7 @@ mod test {
             parser
                 .parse_args(Some(vec!["--foo".to_string(), "a".to_string()]))
                 .unwrap_err(),
-            ParserError::IncorrectValueCount("[--foo]".to_string(), NArgs::Exact(2), 1)
+            ParsingError::IncorrectValueCount("[--foo]".to_string(), NArgs::Exact(2), 1)
         );
         parser = parser
             .add_argument::<&str>(
@@ -743,7 +751,7 @@ mod test {
                     "a".to_string()
                 ]))
                 .unwrap_err(),
-            ParserError::UnprocessedRawArguments("a".to_string())
+            ParsingError::UnprocessedRawArguments("a".to_string())
         );
     }
 
@@ -814,7 +822,7 @@ mod test {
                     "a".to_string()
                 ]))
                 .unwrap_err(),
-            ParserError::IncorrectValueCount("[--foo]".to_string(), NArgs::Exact(2), 1)
+            ParsingError::IncorrectValueCount("[--foo]".to_string(), NArgs::Exact(2), 1)
         );
         parser = parser
             .add_argument::<&str>(
@@ -854,7 +862,7 @@ mod test {
                     "a".to_string()
                 ]))
                 .unwrap_err(),
-            ParserError::UnprocessedRawArguments("a".to_string())
+            ParsingError::UnprocessedRawArguments("a".to_string())
         );
     }
 }

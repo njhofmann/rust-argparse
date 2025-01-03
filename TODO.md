@@ -1,3 +1,8 @@
+- subparser
+    - error for conflicting subparser names with manager.add_parser
+    - error for conflicting subparser names in main parser
+    - add manager behavior in main_parser.parse_args (and known args)
+        - concat results
 - test improvement
     - remove setup from retrieval 
     - split usage display, coverage w/ more metavar
@@ -19,14 +24,6 @@
     - prefix chargs
         - mixed gives error
     - how to release library guide
-
-- will not support / deliberatly not supported
-    - convert_arg_line_to_args as it required manual overriding in python
-    - error on nonsensical argument pairings
-    - ArgumentParser.exit_on_error
-        - raise errors to user in rust like fashion
-    - won't support specific positional argument splitting 
-    - intermixed args
 
 - maybe but probably not
     - ArgumentParser.parse_args(namespace=)

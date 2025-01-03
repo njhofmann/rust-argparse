@@ -2,11 +2,15 @@ use std::fmt::Display;
 
 use argument::Argument;
 
+mod action;
 pub mod argument;
-pub mod argument_error;
-mod argument_name;
+pub mod argument_name;
 pub mod argument_parser;
+mod choices;
+mod conclict_handling_strategy;
+pub mod nargs;
 pub mod parse_result;
+pub mod prefix_chars;
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq, Eq)]

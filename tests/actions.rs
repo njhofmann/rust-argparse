@@ -4,7 +4,7 @@ mod actions {
     use py_arg_parse::parse_result::RetrievalError;
 
     mod parse_known_args {
-        use py_arg_parse::{argument::NArgs, argument_parser::ParserError};
+        use py_arg_parse::{argument_parser::ParsingError, nargs::NArgs};
 
         use super::*;
 
@@ -48,7 +48,7 @@ mod actions {
                         "spam".to_string()
                     ]))
                     .unwrap_err(),
-                ParserError::InvalidFlagArgument("badger".to_string())
+                ParsingError::InvalidFlagArgument("badger".to_string())
             );
             let (expected_namespace, unknown_args) = parser
                 .parse_known_args(Some(vec![
@@ -262,7 +262,7 @@ mod actions {
     }
 
     mod store {
-        use py_arg_parse::{argument::NArgs, argument_parser::ParserError};
+        use py_arg_parse::{argument_parser::ParsingError, nargs::NArgs};
 
         use super::*;
 
@@ -445,7 +445,7 @@ mod actions {
                 parser
                     .parse_args(Some(vec!["--bea".to_string(), "test".to_string()]))
                     .unwrap_err(),
-                ParserError::AmbiguousAbbreviatedArguments(
+                ParsingError::AmbiguousAbbreviatedArguments(
                     "bea".to_string(),
                     "[beam, beast]".to_string()
                 )
@@ -585,7 +585,7 @@ mod actions {
                 parser
                     .parse_args(Some(vec!["--bea".to_string(), "test".to_string()]))
                     .unwrap_err(),
-                ParserError::InvalidFlagArgument("bea".to_string())
+                ParsingError::InvalidFlagArgument("bea".to_string())
             );
         }
 
@@ -614,7 +614,7 @@ mod actions {
                         "young".to_string()
                     ]))
                     .unwrap_err(),
-                ParserError::DuplicateFlagArgument("[--foo, -f]".to_string())
+                ParsingError::DuplicateFlagArgument("[--foo, -f]".to_string())
             );
         }
     }
@@ -744,18 +744,12 @@ mod actions {
                 namespace.get_three_value::<String>("gia").unwrap(),
                 ("test".to_string(), "sugar".to_string(), "poppy".to_string())
             );
-            let namespace = parser
-            .parse_args(Some(vec![
-                "-bmf".to_string()
-            ]))
-            .unwrap();
+            let namespace = parser.parse_args(Some(vec!["-bmf".to_string()])).unwrap();
             assert_eq!(
                 namespace.get_three_value::<String>("gia").unwrap(),
                 ("poppy".to_string(), "sugar".to_string(), "test".to_string())
             )
         }
-
-        
 
         #[test]
         fn with_parent_parser() {
@@ -841,9 +835,7 @@ mod actions {
                     None,
                 )
                 .unwrap()
-                .parse_args(Some(vec![
-                    "-vvv".to_string()
-                ]))
+                .parse_args(Some(vec!["-vvv".to_string()]))
                 .unwrap();
             assert_eq!(namespace.get_one_value::<usize>("v").unwrap(), 3)
         }

@@ -1,25 +1,44 @@
 use std::{
     collections::{HashMap, HashSet},
     env,
-    f32::consts::E,
     fmt::Display,
-    iter, option,
 };
 
 use crate::{
-    argument::{Action, Argument, NArgs},
-    argument_error::ArgumentError,
-    argument_name::ArgumentName,
-    parse_result::Namespace,
-    string_vec_to_string, InvalidChoice,
+    action::Action, argument::{Argument, ArgumentError}, argument_name::{ArgumentName, ArgumentNameError}, choices::ChoicesError, conclict_handling_strategy::{ConflictHandlingStrategy, ConflictHandlingStrategyError}, nargs::NArgs, parse_result::Namespace, prefix_chars::{PrefixChars, PrefixCharsError}, string_vec_to_string, InvalidChoice
 };
 use thiserror::Error;
 
 // if this pseudo-arg is given, everything after is a positional argument
 const ONLY_POSITIONAL_ARGS: &str = "--";
 
+// errors occuring during ArgumentParser setup
 #[derive(Error, Debug, PartialEq, Eq)]
-pub enum ParserError {
+pub enum ArgumentParserError {
+    #[error("{0}")]
+    PrefixCharsError(PrefixCharsError),
+    #[error("{0}")]
+    InvalidChoice(InvalidChoice),
+    #[error("{0}")]
+    AddArgumentError(AddArgumentError),
+    #[error("{0}")]
+    ConflictHandlingStrategyError(ConflictHandlingStrategyError),
+}
+
+// errors occuring when adding an argument
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum AddArgumentError {
+    #[error("{0}")]
+    ArgumentError(ArgumentError),
+    #[error("duplicated help argument added under argument {0}")]
+    DuplicateHelpArgument(String),
+    #[error("duplicated help argument added under argument {0}")]
+    DuplicateVersionArgument(String),
+}
+
+// errors that occur when parsing raw argument values
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum ParsingError {
     #[error("argument {0} expected {1} values, but found {2}")]
     IncorrectValueCount(String, NArgs, usize),
     #[error("missing values for required flag aruments {0}")]
@@ -31,132 +50,106 @@ pub enum ParserError {
     #[error("found multiple arguments {1} for abbreviated argument key \"{0}\"")]
     AmbiguousAbbreviatedArguments(String, String),
     #[error("{0}")]
-    InvalidChoice(InvalidChoice),
+    ChoicesError(ChoicesError),
     #[error("no arguments were found to process remaining raw arguments {0}")]
     UnprocessedRawArguments(String),
 }
 
+#[derive(Debug, Error)]
+pub enum SubparserError {
+    #[error("a subparser with the name \"{0}\" has already been registered")]
+    DuplicateNameInParser(String),
+    #[error("subparser identifier \"{0}\" has been registered for multiple subparsers across multiple subparser managers")]
+    DupblicateNameAcrossParsers(String),
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct PrefixChars((HashSet<char>, char));
+pub struct SubparserManager {
+    title: Option<String>,
+    description: Option<String>,
+    prog: Option<String>,
+    help: Option<String>,
+    required: bool,
+    subparser_name_idx_mapping: HashMap<String, usize>,
+    subparsers: Vec<ArgumentParser>,
+}
 
-impl PrefixChars {
-    pub fn new(chars: Option<&str>) -> Result<PrefixChars, ArgumentError> {
-        match chars {
-            None => Ok(PrefixChars((
-                HashSet::from_iter::<Vec<char>>(vec!['-']),
-                '-',
-            ))),
-            Some(x) => {
-                let as_string = x.to_string();
-                let mut chars = as_string.chars();
-                let temp = HashSet::from_iter(chars.clone().into_iter());
-                if temp.is_empty() {
-                    Err(ArgumentError::EmptyPrefixChars)
-                } else {
-                    let mut illegal_chars: Vec<String> = temp
-                        .iter()
-                        .filter_map(|x| {
-                            if x.is_whitespace() {
-                                Some(x.to_string())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    illegal_chars.sort(); // for consistent tests
-                    if illegal_chars.is_empty() {
-                        Ok(PrefixChars((temp, chars.next().unwrap())))
-                    } else {
-                        Err(ArgumentError::IllegalPrefixChars(string_vec_to_string(
-                            &illegal_chars,
-                            false,
-                        )))
+impl SubparserManager {
+    pub fn new(
+        title: Option<&str>,
+        description: Option<&str>,
+        prog: Option<&str>,
+        help: Option<&str>,
+        required: Option<bool>,
+    ) -> SubparserManager {
+        // TODO action, dest, metavar
+        // TODO unsupported: parser_class
+        SubparserManager {
+            title: title.map(|x| x.to_string()),
+            description: description.map(|x| x.to_string()),
+            prog: prog.map(|x| x.to_string()),
+            help: help.map(|x| x.to_string()),
+            required: required.unwrap_or(false),
+            subparser_name_idx_mapping: HashMap::new(),
+            subparsers: Vec::new(),
+        }
+    }
+
+    pub fn add_parser(
+        &self,
+        name: &str,
+        parser: ArgumentParser,
+        aliases: Option<Vec<&str>>,
+    ) -> Result<SubparserManager, SubparserError> {
+        let mut new_manager = self.clone();
+        new_manager.subparsers.push(parser);
+        let idx = new_manager.subparsers.len() - 1;
+
+        if new_manager.subparser_name_idx_mapping.contains_key(name) {
+            Err(SubparserError::DuplicateNameInParser(name.to_string()))
+        } else {
+            new_manager
+                .subparser_name_idx_mapping
+                .insert(name.to_string(), idx);
+            if aliases.is_some() {
+                for alias in aliases.unwrap() {
+                    if new_manager.subparser_name_idx_mapping.contains_key(name) {
+                        return Err(SubparserError::DuplicateNameInParser(name.to_string()));
                     }
+                    new_manager
+                        .subparser_name_idx_mapping
+                        .insert(alias.to_string(), idx);
+                }
+            }
+            Ok(new_manager)
+        }
+    }
+
+    fn get_subparser(&self, name: String) -> Option<&ArgumentParser> {
+        self.subparser_name_idx_mapping
+            .get(&name)
+            .map(|idx| &self.subparsers[*idx])
+    }
+
+    fn names(&self) -> Vec<&String> {
+        self.subparser_name_idx_mapping.keys().into_iter().collect()
+    }
+
+    fn check_name_overlap(&self, other_manager: &SubparserManager) -> Result<(), SubparserError> {
+        for name in self.names().into_iter() {
+            for other_name in other_manager.names().into_iter() {
+                if name == other_name {
+                    return Err(SubparserError::DupblicateNameAcrossParsers(
+                        name.to_string(),
+                    ));
                 }
             }
         }
-    }
-
-    pub fn parse_string(&self, string: &str) -> (String, usize) {
-        for char in self.0 .0.clone().into_iter() {
-            let mut n_matches = 0;
-            for string_char in string.chars() {
-                if char == string_char {
-                    n_matches += 1;
-                } else {
-                    break;
-                }
-            }
-            if n_matches > 0 {
-                let parsed_string = &string[n_matches..];
-                return (parsed_string.to_string(), n_matches);
-            }
-        }
-        return (string.to_string(), 0);
-    }
-
-    pub fn display_arg_name(&self, argument: &Argument) -> String {
-        match argument.name() {
-            ArgumentName::Positional(x) => x.clone(),
-            ArgumentName::Flag(map) => {
-                let default: String = self.0 .1.to_string();
-                let mut prefix_counts: Vec<&usize> = map.keys().into_iter().collect();
-                prefix_counts.sort();
-                //let prefix = default.
-                let prefix_size = prefix_counts.first().unwrap();
-                let name: String = map.get(prefix_size).unwrap().first().unwrap().clone();
-                let prefix: String = iter::repeat(default).take(**prefix_size).collect();
-                prefix + &name
-            }
-        }
+        Ok(())
     }
 }
 
-impl Default for PrefixChars {
-    fn default() -> Self {
-        PrefixChars::new(Some("-")).unwrap()
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum ConflictHandlingStrategy {
-    Error,
-    Override, // instead of resolve
-}
-
-impl ConflictHandlingStrategy {
-    fn new(strategy: Option<&str>) -> Result<ConflictHandlingStrategy, ArgumentError> {
-        match strategy {
-            None | Some("error") => Ok(ConflictHandlingStrategy::Error),
-            Some("override") | Some("resolve") => Ok(ConflictHandlingStrategy::Override),
-            Some(s) => Err(ArgumentError::UnsupportedConflictHandlingStrategy(
-                s.to_string(),
-            )),
-        }
-    }
-
-    fn is_override(&self) -> bool {
-        match self {
-            Self::Override => true,
-            _ => false,
-        }
-    }
-}
-
-impl Display for ConflictHandlingStrategy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                ConflictHandlingStrategy::Error => "error",
-                ConflictHandlingStrategy::Override => "resolve",
-            }
-        )
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ArgumentParser {
     positional_args: Vec<Argument>,
     flag_args: Vec<Argument>,
@@ -171,6 +164,7 @@ pub struct ArgumentParser {
     help_arg_added: bool,
     version_arg_added: bool,
     conflict_handler: ConflictHandlingStrategy,
+    subparser_managers: Option<Vec<SubparserManager>>,
 }
 
 impl Display for ArgumentParser {
@@ -223,7 +217,7 @@ impl ArgumentParser {
         conflict_handler: Option<&str>,
         add_help: Option<bool>,
         allow_abbrev: Option<bool>,
-    ) -> Result<ArgumentParser, ArgumentError> {
+    ) -> Result<ArgumentParser, ArgumentParserError> {
         let mut parser = ArgumentParser {
             positional_args: Vec::new(),
             flag_args: Vec::new(),
@@ -241,16 +235,19 @@ impl ArgumentParser {
                 |x| x.to_string(),
             ),
             epilog: epilog.map(|x| x.to_string()),
-            prefix_chars: PrefixChars::new(prefix_chars)?,
+            prefix_chars: PrefixChars::new(prefix_chars)
+                .map_err(ArgumentParserError::PrefixCharsError)?,
             argument_default: argument_default
                 .map(|x| x.into_iter().map(|y| y.to_string()).collect()),
             allow_abbrev_mapping: match allow_abbrev.unwrap_or(true) {
                 true => Some(HashMap::new()),
                 false => None,
             },
-            conflict_handler: ConflictHandlingStrategy::new(conflict_handler)?,
+            conflict_handler: ConflictHandlingStrategy::new(conflict_handler)
+                .map_err(ArgumentParserError::ConflictHandlingStrategyError)?,
             help_arg_added: false,
             version_arg_added: false,
+            subparser_managers: None,
         };
 
         if add_help.unwrap_or(true) && !parser.help_arg_added {
@@ -281,11 +278,19 @@ impl ArgumentParser {
                         parser.positional_args,
                         parser.arg_name_mapping,
                         parser.allow_abbrev_mapping,
-                    ) = parser.check_for_duplicate_arg_names(argument.name())?;
+                    ) = parser
+                        .check_for_duplicate_arg_names(argument.name())
+                        .map_err(|e| {
+                            ArgumentParserError::AddArgumentError(AddArgumentError::ArgumentError(
+                                e,
+                            ))
+                        })?;
                     let cloned_arg = argument.clone();
                     let temp_dest = cloned_arg.dest().clone();
                     let dest: Option<&str> = temp_dest.as_deref();
-                    parser = parser.store_argument(cloned_arg, dest)?;
+                    parser = parser
+                        .store_argument(cloned_arg, dest)
+                        .map_err(ArgumentParserError::AddArgumentError)?;
                 }
             }
         }
@@ -377,11 +382,29 @@ impl ArgumentParser {
         ))
     }
 
+    fn get_subparser(&self, name: String) -> Option<&ArgumentParser> {
+        if self.subparser_managers.is_none() {
+            None
+        } else {
+            let possible_parsers: Vec<&ArgumentParser> = self
+                .subparser_managers
+                .as_ref()
+                .unwrap()
+                .into_iter()
+                .filter_map(|manager| manager.get_subparser(name.to_string()))
+                .collect();
+            if possible_parsers.len() > 1 {
+                panic!("duplicate subparser names should've been caught when adding them")
+            }
+            Some(&possible_parsers.first().unwrap())
+        }
+    }
+
     fn parse_flag_argument_name(
         &self,
         argument_name: &String,
         is_short_flag: bool,
-    ) -> Result<(Vec<Argument>, Option<String>), ParserError> {
+    ) -> Result<(Vec<Argument>, Option<String>), ParsingError> {
         // check for values in form of "key=value"
         let mut optional_value: Option<String> = None;
         let split: &str = &argument_name.clone();
@@ -415,7 +438,7 @@ impl ArgumentParser {
                         .map(|(k, _)| k.clone())
                         .collect();
                     conflicting_arg_names.sort();
-                    Err(ParserError::AmbiguousAbbreviatedArguments(
+                    Err(ParsingError::AmbiguousAbbreviatedArguments(
                         argument_name.clone(),
                         string_vec_to_string(&conflicting_arg_names, true),
                     ))
@@ -435,7 +458,7 @@ impl ArgumentParser {
                 } else if is_short_flag && argument_name.len() > 1 {
                     Ok(None)
                 } else {
-                    Err(ParserError::InvalidFlagArgument(argument_name.clone()))
+                    Err(ParsingError::InvalidFlagArgument(argument_name.clone()))
                 }
             }
         }?;
@@ -450,7 +473,7 @@ impl ArgumentParser {
                 let &(idx, is_flag_arg) = self
                     .arg_name_mapping
                     .get(arg.as_str())
-                    .ok_or(ParserError::InvalidFlagArgument(arg.clone()))?;
+                    .ok_or(ParsingError::InvalidFlagArgument(arg.clone()))?;
                 debug_assert!(is_flag_arg);
                 arguments.push(self.flag_args[idx].clone());
             }
@@ -461,7 +484,7 @@ impl ArgumentParser {
                 let last_arg = arguments.last().unwrap();
                 if !last_arg.nargs().can_be_zero() {
                     // TODO should
-                    return Err(ParserError::IncorrectValueCount(
+                    return Err(ParsingError::IncorrectValueCount(
                         last_arg.name().to_string(),
                         last_arg.nargs().clone(),
                         0,
@@ -471,7 +494,7 @@ impl ArgumentParser {
             } else if optional_value.is_none() {
                 let last_arg = arguments.last().unwrap();
                 if !last_arg.nargs().is_valid_number(1) {
-                    return Err(ParserError::IncorrectValueCount(
+                    return Err(ParsingError::IncorrectValueCount(
                         last_arg.name().to_string(),
                         last_arg.nargs().clone(),
                         1,
@@ -484,7 +507,7 @@ impl ArgumentParser {
 
             for argument in arguments.clone()[..arguments.len() - 1].into_iter() {
                 if !argument.nargs().can_be_zero() {
-                    return Err(ParserError::IncorrectValueCount(
+                    return Err(ParsingError::IncorrectValueCount(
                         argument.name().to_string(),
                         argument.nargs().clone(),
                         0,
@@ -498,7 +521,7 @@ impl ArgumentParser {
             let argument = self.flag_args[idx].clone();
 
             if optional_value.is_some() && !argument.nargs().is_valid_number(1) {
-                return Err(ParserError::IncorrectValueCount(
+                return Err(ParsingError::IncorrectValueCount(
                     argument.name().to_string(),
                     argument.nargs().clone(),
                     1,
@@ -513,11 +536,11 @@ impl ArgumentParser {
         &self,
         argument: Argument,
         dest: Option<&str>,
-    ) -> Result<ArgumentParser, ArgumentError> {
+    ) -> Result<ArgumentParser, AddArgumentError> {
         let (help_arg_added, version_arg_added) = match argument.action() {
             Action::Help => {
                 if self.help_arg_added && !self.conflict_handler.is_override() {
-                    Err(ArgumentError::DuplicateHelpArgument(
+                    Err(AddArgumentError::DuplicateHelpArgument(
                         argument.name().to_string(),
                     ))
                 } else {
@@ -526,7 +549,7 @@ impl ArgumentParser {
             }
             Action::Version(_) => {
                 if self.version_arg_added && !self.conflict_handler.is_override() {
-                    Err(ArgumentError::DuplicateVersionArgument(
+                    Err(AddArgumentError::DuplicateVersionArgument(
                         argument.name().to_string(),
                     ))
                 } else {
@@ -571,6 +594,7 @@ impl ArgumentParser {
             conflict_handler: self.conflict_handler,
             help_arg_added: help_arg_added,
             version_arg_added: version_arg_added,
+            subparser_managers: self.subparser_managers.clone(),
         };
 
         if let Action::AppendConst(_) = argument.action() {
@@ -606,7 +630,11 @@ impl ArgumentParser {
                     existing_dest_arg.unwrap().0.first().unwrap().clone();
                 match (existing_dest_arg.action(), new_dest_argument.action()) {
                     (Action::Extend(_), Action::Extend(_)) => Ok(()),
-                    _ => Err(ArgumentError::DuplicateArgumentName(dest)),
+                    _ => Err(AddArgumentError::ArgumentError(
+                        ArgumentError::ArgumentNameError(ArgumentNameError::DuplicateArgumentName(
+                            dest,
+                        )),
+                    )),
                 }?
             }
         };
@@ -684,10 +712,13 @@ impl ArgumentParser {
         metavar: Option<&str>,
         dest: Option<&str>,
         version: Option<&str>,
-    ) -> Result<ArgumentParser, ArgumentError> {
-        let arg_name: ArgumentName = ArgumentName::new(name, &self.prefix_chars)?.clone();
+    ) -> Result<ArgumentParser, AddArgumentError> {
+        let arg_name: ArgumentName = ArgumentName::new(name, &self.prefix_chars)
+            .map_err(|e| AddArgumentError::ArgumentError(ArgumentError::ArgumentNameError(e)))?
+            .clone();
         let (new_flag_args, new_positional_args, new_arg_name_mapping, new_allow_abbrev_mapping) =
-            self.check_for_duplicate_arg_names(&arg_name)?;
+            self.check_for_duplicate_arg_names(&arg_name)
+                .map_err(AddArgumentError::ArgumentError)?;
         // this shouldn't happen often
         let constant = constant.map(|x| x.into_iter().map(|y| y.to_string()).collect());
         let default = default.map(|x| x.into_iter().map(|y| y.to_string()).collect());
@@ -701,7 +732,8 @@ impl ArgumentParser {
         let new_argument = Argument::new(
             arg_name, action, nargs, constant, default, choices, required, help, metavar, dest,
             version,
-        )?;
+        )
+        .map_err(AddArgumentError::ArgumentError)?;
 
         let new_parser = ArgumentParser {
             positional_args: new_positional_args,
@@ -718,6 +750,7 @@ impl ArgumentParser {
             conflict_handler: self.conflict_handler,
             help_arg_added: self.help_arg_added,
             version_arg_added: self.version_arg_added,
+            subparser_managers: self.subparser_managers.clone(),
         };
         new_parser.store_argument(new_argument, dest)
     }
@@ -740,7 +773,7 @@ impl ArgumentParser {
         &self,
         raw_args: Option<Vec<String>>,
         keep_or_error_unknown_args: bool,
-    ) -> Result<(Namespace, Vec<String>), ParserError> {
+    ) -> Result<(Namespace, Vec<String>), ParsingError> {
         let mut unknown_args: Vec<String> = Vec::new(); // only used if keep_or_error_unknown_args is true
         let raw_args = raw_args.unwrap_or(env::args().collect());
         let mut processed_arguments: HashSet<Argument> = HashSet::new();
@@ -752,6 +785,7 @@ impl ArgumentParser {
         let mut last_arg_was_flag = true;
         let mut set_next_posn_group_idx = false;
         let mut all_remaining_args_positional = false;
+        let mut subparser_parsing: Option<(Namespace, Vec<String>)> = None;
         // staring idx of the last posn arg group
         let mut last_posn_arg_group_idx: Option<usize> = None; // tracks indices in arg_and_raw_arg_range
                                                                // contine to parse so long as posn arguments are left or raw args haven't been looked at (may have flags)
@@ -773,6 +807,17 @@ impl ArgumentParser {
 
             let (flag_raw_arg, n_prefixes) = if cur_raw_arg.is_some() {
                 let cur_raw_arg = cur_raw_arg.unwrap();
+
+                if let Some(subparser) = self.get_subparser(cur_raw_arg.to_string()) {
+                    // TODO run subparser on remaining args, concat results at end
+                    let remaining_args: Vec<String> = raw_args[idx + 1..].to_vec();
+                    subparser_parsing = Some(
+                        subparser
+                            .parse_raw_args(Some(remaining_args), keep_or_error_unknown_args)?,
+                    );
+                    break;
+                }
+
                 if cur_raw_arg == ONLY_POSITIONAL_ARGS {
                     if !all_remaining_args_positional {
                         all_remaining_args_positional = true;
@@ -803,11 +848,11 @@ impl ArgumentParser {
                 // - single flag argument (long or short)
                 // - single flag argument & single length value (--key=value)
                 // - multiple short flag arguments & maybe a single length value
-                let parsed_result: Result<(Vec<Argument>, Option<String>), ParserError> =
+                let parsed_result: Result<(Vec<Argument>, Option<String>), ParsingError> =
                     self.parse_flag_argument_name(&flag_raw_arg, n_prefixes == 1);
 
                 if keep_or_error_unknown_args
-                    && parsed_result == Err(ParserError::InvalidFlagArgument(flag_raw_arg.clone()))
+                    && parsed_result == Err(ParsingError::InvalidFlagArgument(flag_raw_arg.clone()))
                 {
                     unknown_args.push(cur_raw_arg.unwrap().to_string());
                     idx += 1; // move past flag
@@ -844,7 +889,7 @@ impl ArgumentParser {
                     unknown_args.append(&mut unprocessed_args.clone());
                     break;
                 } else {
-                    return Err(ParserError::UnprocessedRawArguments(string_vec_to_string(
+                    return Err(ParsingError::UnprocessedRawArguments(string_vec_to_string(
                         &raw_args[idx..].to_vec(),
                         false,
                     )));
@@ -943,7 +988,7 @@ impl ArgumentParser {
                         && found_argument.name().is_flag_argument()
                         && found_argument.nargs() != &NArgs::Exact(0)
                     {
-                        return Err(ParserError::IncorrectValueCount(
+                        return Err(ParsingError::IncorrectValueCount(
                             found_argument.name().to_string(),
                             *found_argument.nargs(),
                             found_value_count,
@@ -966,7 +1011,7 @@ impl ArgumentParser {
                             match (last_posn_arg_group_idx, arg_and_raw_arg_range.is_empty()) {
                                 (None, false) => {
                                     // is this right?
-                                    return Err(ParserError::IncorrectValueCount(
+                                    return Err(ParsingError::IncorrectValueCount(
                                         found_argument.name().to_string(),
                                         found_argument.nargs().clone(),
                                         found_value_count,
@@ -975,7 +1020,7 @@ impl ArgumentParser {
                                 (Some(n), false) => n, // args added, some are posns
                                 (None, true) => {
                                     // posn args not added
-                                    return Err(ParserError::IncorrectValueCount(
+                                    return Err(ParsingError::IncorrectValueCount(
                                         found_argument.name().to_string(),
                                         found_argument.nargs().clone(),
                                         found_value_count,
@@ -1037,7 +1082,7 @@ impl ArgumentParser {
                         }
 
                         if n_missing_args > 0 {
-                            return Err(ParserError::IncorrectValueCount(
+                            return Err(ParsingError::IncorrectValueCount(
                                 found_argument.name().to_string(),
                                 found_argument.nargs().clone(),
                                 found_value_count,
@@ -1119,20 +1164,20 @@ impl ArgumentParser {
                     }
                     Action::Store(_) => {
                         if seen_arguments.contains(&argument) {
-                            Err(ParserError::DuplicateFlagArgument(
+                            Err(ParsingError::DuplicateFlagArgument(
                                 argument.name().to_string(),
                             ))
                         } else {
                             seen_arguments.contains(&argument); // mark as found
                             argument
                                 .arg_value_in_choices(&arg_val_vec)
-                                .map_err(ParserError::InvalidChoice)?;
+                                .map_err(ParsingError::ChoicesError)?;
                             Ok(argument.with_action(Action::Store(arg_val_vec)))
                         }
                     }
                     Action::StoreConst(c) => {
                         if seen_arguments.contains(&argument) {
-                            Err(ParserError::DuplicateFlagArgument(
+                            Err(ParsingError::DuplicateFlagArgument(
                                 argument.name().to_string(),
                             ))
                         } else {
@@ -1142,7 +1187,7 @@ impl ArgumentParser {
                     Action::Append(v) => {
                         argument
                             .arg_value_in_choices(&arg_val_vec)
-                            .map_err(ParserError::InvalidChoice)?;
+                            .map_err(ParsingError::ChoicesError)?;
                         let mut new_v = v.clone();
                         if let Some(default) = argument.default() {
                             new_v.append(&mut default.clone())
@@ -1183,7 +1228,7 @@ impl ArgumentParser {
                     Action::Extend(v) => {
                         argument
                             .arg_value_in_choices(&arg_val_vec)
-                            .map_err(ParserError::InvalidChoice)?;
+                            .map_err(ParsingError::ChoicesError)?;
                         let mut new_v = v.clone();
                         new_v.append(&mut arg_val_vec);
                         Ok(argument.with_action(Action::Extend(new_v)))
@@ -1194,7 +1239,7 @@ impl ArgumentParser {
                     Action::Store(_) => {
                         argument
                             .arg_value_in_choices(&arg_val_vec)
-                            .map_err(ParserError::InvalidChoice)?;
+                            .map_err(ParsingError::ChoicesError)?;
 
                         let arg_val = if (argument.nargs() == &NArgs::AnyNumber
                             || argument.nargs() == &NArgs::ZeroOrOne)
@@ -1247,7 +1292,7 @@ impl ArgumentParser {
                 .map(|x| x.name())
                 .collect();
             let str_vec = string_vec_to_string(&name_vec, true);
-            Err(ParserError::MissingRequiredFlagArguments(str_vec))
+            Err(ParsingError::MissingRequiredFlagArguments(str_vec))
         } else {
             let result_namespace = Namespace::new(HashMap::from_iter(
                 processed_arguments.iter().map(|argument| {
@@ -1266,11 +1311,25 @@ impl ArgumentParser {
                     )
                 }),
             ));
-            Ok((result_namespace, unknown_args))
+
+            let (final_namespace, final_unknown_args) =
+                if let Some((subparser_namespace, subparser_unknown_args)) = subparser_parsing {
+                    let mut new_unknown_args = unknown_args.clone();
+                    let mut new_subparser_unknown_args = subparser_unknown_args.clone();
+                    new_unknown_args.append(&mut new_subparser_unknown_args);
+                    (
+                        result_namespace.extend(subparser_namespace),
+                        new_unknown_args,
+                    )
+                } else {
+                    (result_namespace, unknown_args)
+                };
+
+            Ok((final_namespace, final_unknown_args))
         }
     }
 
-    pub fn parse_args(&self, raw_args: Option<Vec<String>>) -> Result<Namespace, ParserError> {
+    pub fn parse_args(&self, raw_args: Option<Vec<String>>) -> Result<Namespace, ParsingError> {
         let (namespace, remaining_args) = self.parse_raw_args(raw_args, false)?;
         debug_assert!(remaining_args.is_empty());
         Ok(namespace)
@@ -1279,11 +1338,49 @@ impl ArgumentParser {
     pub fn parse_known_args(
         &self,
         raw_args: Option<Vec<String>>,
-    ) -> Result<(Namespace, Vec<String>), ParserError> {
+    ) -> Result<(Namespace, Vec<String>), ParsingError> {
         self.parse_raw_args(raw_args, true)
     }
 
-    pub fn add_subparsers() {}
+    pub fn add_subparsers(
+        &self,
+        subparser_managers: Vec<SubparserManager>,
+    ) -> Result<ArgumentParser, SubparserError> {
+        // TODO not supported: parser_class
+        // TODO support: action, required, metavar, help,
+        let mut new_parser = self.clone();
+        // TODO check for naming conflicts
+        new_parser.subparser_managers = Some(match new_parser.subparser_managers {
+            Some(v) => {
+                let mut new_v = v.clone();
+                new_v.extend(subparser_managers);
+                new_v
+            }
+            None => subparser_managers,
+        });
+
+        for (i, manager) in new_parser
+            .subparser_managers
+            .clone()
+            .unwrap()
+            .into_iter()
+            .enumerate()
+        {
+            for (k, other_manager) in new_parser
+                .subparser_managers
+                .clone()
+                .unwrap()
+                .into_iter()
+                .enumerate()
+            {
+                if i != k {
+                    manager.check_name_overlap(&other_manager)?;
+                }
+            }
+        }
+
+        Ok(new_parser)
+    }
 
     pub fn add_argument_group() {
         todo!()
@@ -1332,6 +1429,14 @@ impl ArgumentParser {
 mod test {
     use std::{fmt::Display, str::FromStr};
 
+    use crate::{
+        argument::ArgumentError,
+        argument_parser::{AddArgumentError, ArgumentParserError},
+        conclict_handling_strategy::ConflictHandlingStrategyError,
+        nargs::NArgs,
+        prefix_chars::PrefixCharsError,
+    };
+
     use super::ArgumentParser;
 
     #[test]
@@ -1377,608 +1482,6 @@ mod test {
     }
 
     #[test]
-    fn default_usage() {
-        let parser = ArgumentParser::new(
-            Some("test_parser"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-        .add_argument::<&str>(
-            vec!["-g"],
-            None,
-            Some(NArgs::Exact(2)),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-        .add_argument::<&str>(
-            vec!["--bug", "-b"],
-            None,
-            Some(NArgs::AnyNumber),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-        .add_argument::<&str>(
-            vec!["--bag"],
-            None,
-            Some(NArgs::ZeroOrOne),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-        .add_argument::<&str>(
-            vec!["goo"],
-            None,
-            Some(NArgs::OneOrMore),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-        .add_argument::<&str>(
-            vec!["--hyt"],
-            None,
-            Some(NArgs::OneOrMore),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-        .add_argument::<&str>(
-            vec!["boo"],
-            None,
-            Some(NArgs::ZeroOrOne),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-        .add_argument::<&str>(
-            vec!["gaf"],
-            None,
-            Some(NArgs::Exact(2)),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-        .add_argument::<&str>(
-            vec!["opy"],
-            None,
-            Some(NArgs::AnyNumber),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-        .add_argument::<&str>(
-            vec!["--got"],
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("tog"),
-            None,
-            None,
-        )
-        .unwrap();
-        assert_eq!(
-            parser.format_usage(),
-            "test_parser [-h] [-g G G] [-b [BUG ...]] [--bag [BAG]] [--hyt HYT [HYT ...]] [--got tog] goo [goo ...] [boo] gaf gaf [opy ...]".to_string()
-        )
-    }
-
-    #[test]
-    fn parser_with_help() {
-        assert_eq!(
-            ArgumentParser::new(
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(true),
-                None
-            )
-            .unwrap(),
-            ArgumentParser::new(
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(false),
-                None
-            )
-            .unwrap()
-            .add_argument::<&str>(
-                vec!["-h", "--help"],
-                Some("help"),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None
-            )
-            .unwrap()
-        )
-    }
-
-    fn default_arg_parser() -> ArgumentParser {
-        ArgumentParser::new(
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(false),
-            None,
-        )
-        .unwrap()
-    }
-
-    use crate::{
-        argument::{Argument, NArgs},
-        argument_error::ArgumentError,
-        argument_name::ArgumentName,
-        argument_parser::{ParserError, PrefixChars},
-        parse_result::Namespace,
-    };
-
-    #[test]
-    fn add_non_required_positional_argument() {
-        assert_eq!(
-            default_arg_parser()
-                .add_argument::<&str>(
-                    vec!["foo"],
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    Some(false),
-                    None,
-                    None,
-                    None,
-                    None
-                )
-                .unwrap_err(),
-            ArgumentError::RequiredMarkedForPositionalArgument
-        )
-    }
-
-    #[test]
-    fn add_non_required_flag_argument_with_default() {
-        assert_eq!(
-            default_arg_parser()
-                .add_argument::<&str>(
-                    vec!["--foo"],
-                    None,
-                    Some(NArgs::AnyNumber),
-                    None,
-                    None,
-                    None,
-                    Some(false),
-                    None,
-                    None,
-                    None,
-                    None
-                )
-                .unwrap_err(),
-            ArgumentError::NonRequiredArgumentNotGivenDefaultValue(
-                ArgumentName::new(vec!["--foo"], &PrefixChars::default())
-                    .unwrap()
-                    .to_string()
-            )
-        )
-    }
-
-    #[test]
-    fn add_required_flag_argument_with_default() {
-        assert_eq!(
-            default_arg_parser()
-                .add_argument(
-                    vec!["--foo"],
-                    None,
-                    None,
-                    None,
-                    Some(vec!["bar"]),
-                    None,
-                    Some(true),
-                    None,
-                    None,
-                    None,
-                    None
-                )
-                .unwrap_err(),
-            ArgumentError::RequiredArgumentDefaultValueGiven(
-                ArgumentName::new(vec!["--foo"], &PrefixChars::default())
-                    .unwrap()
-                    .to_string(),
-                "[bar]".to_string()
-            ),
-        )
-    }
-
-    #[test]
-    fn duplicate_flag_argument_names() {
-        assert_eq!(
-            default_arg_parser()
-                .add_argument::<&str>(
-                    vec!["--foo"],
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None
-                )
-                .unwrap()
-                .add_argument::<&str>(
-                    vec!["--foo"],
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None
-                )
-                .unwrap_err(),
-            ArgumentError::DuplicateArgumentNameValues("[foo]".to_string())
-        )
-    }
-
-    #[test]
-    fn duplicate_positional_argument_names_error() {
-        assert_eq!(
-            default_arg_parser()
-                .add_argument::<&str>(
-                    vec!["foo"],
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None
-                )
-                .unwrap()
-                .add_argument::<&str>(
-                    vec!["foo"],
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None
-                )
-                .unwrap_err(),
-            ArgumentError::DuplicateArgumentNameValues("[foo]".to_string())
-        )
-    }
-
-    #[test]
-    fn duplicate_positional_argument_names_override() {
-        let parser = ArgumentParser::new(
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("override"),
-            None,
-            None,
-        )
-        .unwrap()
-        .add_argument::<&str>(
-            vec!["foo"],
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        assert!(parser
-            .add_argument::<&str>(
-                vec!["foo"],
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None
-            )
-            .is_ok())
-    }
-
-    #[test]
-    fn add_float_arg() {
-        let expected_arg = Argument::new(
-            ArgumentName::new(vec!["-b", "--bar"], &PrefixChars::default()).unwrap(),
-            None,
-            Some(NArgs::AnyNumber),
-            None,
-            Some(vec![5.6.to_string(), 1.2.to_string()]),
-            Some(vec![
-                vec![5.6.to_string(), 1.2.to_string()],
-                vec![3.4.to_string(), 11.9.to_string()],
-            ]),
-            Some(false),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        let parser = default_arg_parser()
-            .add_argument::<f64>(
-                vec!["-b", "--bar"],
-                None,
-                Some(NArgs::AnyNumber),
-                None,
-                Some(vec![5.6, 1.2]),
-                Some(vec![vec![5.6, 1.2], vec![3.4, 11.9]]),
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
-        argument_in_parser(parser, expected_arg)
-    }
-
-    #[test]
-    fn add_int_arg() {
-        let expected_arg = Argument::new(
-            ArgumentName::new(vec!["-b", "--bar"], &PrefixChars::default()).unwrap(),
-            None,
-            Some(NArgs::AnyNumber),
-            None,
-            Some(vec![5.to_string(), 1.to_string()]),
-            Some(vec![
-                vec![5.to_string(), 1.to_string()],
-                vec![3.to_string(), 1.to_string()],
-            ]),
-            Some(false),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        let parser = default_arg_parser()
-            .add_argument::<i64>(
-                vec!["-b", "--bar"],
-                None,
-                Some(NArgs::AnyNumber),
-                None,
-                Some(vec![5, 1]),
-                Some(vec![vec![5, 1], vec![3, 1]]),
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
-        argument_in_parser(parser, expected_arg)
-    }
-
-    fn argument_in_parser(parser: ArgumentParser, expected_arg: Argument) {
-        let mut found = false;
-        for argument in parser.arguments().iter() {
-            if argument == &&expected_arg {
-                found = true;
-                break;
-            }
-        }
-        assert!(found)
-    }
-
-    #[test]
-    fn add_bool_arg() {
-        let expected_arg = Argument::new(
-            ArgumentName::new(vec!["-b", "--bar"], &PrefixChars::default()).unwrap(),
-            None,
-            Some(NArgs::AnyNumber),
-            None,
-            Some(vec![false.to_string(), true.to_string()]),
-            Some(vec![
-                vec![true.to_string(), false.to_string()],
-                vec![false.to_string(), true.to_string()],
-            ]),
-            Some(false),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        let parser = default_arg_parser()
-            .add_argument::<bool>(
-                vec!["-b", "--bar"],
-                None,
-                Some(NArgs::AnyNumber),
-                None,
-                Some(vec![false, true]),
-                Some(vec![vec![true, false], vec![false, true]]),
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
-        argument_in_parser(parser, expected_arg)
-    }
-
-    #[test]
-    fn add_enum_arg() {
-        enum Test {
-            One,
-            Two,
-            Three,
-        }
-
-        impl Display for Test {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(
-                    f,
-                    "{}",
-                    match self {
-                        Test::One => "1",
-                        Test::Two => "2",
-                        Test::Three => "3",
-                    }
-                )
-            }
-        }
-
-        impl FromStr for Test {
-            type Err = String;
-
-            fn from_str(s: &str) -> Result<Self, Self::Err> {
-                match s {
-                    "1" => Ok(Test::One),
-                    "2" => Ok(Test::Two),
-                    "3" => Ok(Test::Three),
-                    _ => Err("invalid test".to_string()),
-                }
-            }
-        }
-
-        let expected_arg = Argument::new(
-            ArgumentName::new(vec!["-b", "--bar"], &PrefixChars::default()).unwrap(),
-            None,
-            None,
-            None,
-            Some(vec![Test::One.to_string(), Test::One.to_string()]),
-            Some(vec![
-                vec![Test::One.to_string(), Test::One.to_string()],
-                vec![Test::Two.to_string(), Test::Two.to_string()],
-            ]),
-            Some(false),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        let parser = default_arg_parser()
-            .add_argument::<Test>(
-                vec!["-b", "--bar"],
-                None,
-                Some(NArgs::AnyNumber),
-                None,
-                Some(vec![Test::One, Test::One]),
-                Some(vec![vec![Test::One, Test::One], vec![Test::Two, Test::Two]]),
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap();
-        argument_in_parser(parser, expected_arg)
-    }
-
-    #[test]
     fn no_prefix_chars() {
         assert_eq!(
             ArgumentParser::new(
@@ -1994,7 +1497,7 @@ mod test {
                 None
             )
             .unwrap_err(),
-            ArgumentError::EmptyPrefixChars
+            ArgumentParserError::PrefixCharsError(PrefixCharsError::EmptyPrefixChars)
         )
     }
     #[test]
@@ -2013,7 +1516,9 @@ mod test {
                 None
             )
             .unwrap_err(),
-            ArgumentError::IllegalPrefixChars("\t, \n".to_string())
+            ArgumentParserError::PrefixCharsError(PrefixCharsError::IllegalPrefixChars(
+                "\t, \n".to_string()
+            ))
         )
     }
 
@@ -2033,77 +1538,19 @@ mod test {
                 None
             )
             .unwrap_err(),
-            ArgumentError::UnsupportedConflictHandlingStrategy("foo".to_string())
-        )
-    }
-
-    #[test]
-    fn add_duplicate_argument_name_with_overlap_error() {
-        let parser = ArgumentParser::new(
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some("error"),
-            Some(false),
-            None,
-        )
-        .unwrap()
-        .add_argument::<&str>(
-            vec!["--foo", "-h"],
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap();
-        assert_eq!(
-            parser
-                .parse_args(Some(vec!["-h".to_string(), "a".to_string()]))
-                .unwrap()
-                .get_one_value::<String>("foo")
-                .unwrap(),
-            "a"
-        );
-        assert_eq!(
-            parser
-                .parse_args(Some(vec!["--foo".to_string(), "a".to_string()]))
-                .unwrap()
-                .get_one_value::<String>("foo")
-                .unwrap(),
-            "a"
-        );
-        assert_eq!(
-            parser
-                .add_argument::<&str>(
-                    vec!["--h"],
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None
+            ArgumentParserError::ConflictHandlingStrategyError(
+                ConflictHandlingStrategyError::UnsupportedConflictHandlingStrategy(
+                    "foo".to_string()
                 )
-                .unwrap_err(),
-            ArgumentError::DuplicateArgumentNameValues("[h]".to_string())
+            )
         )
     }
 
     mod parent_parser_tests {
-        use crate::{argument_error::ArgumentError, argument_parser::ArgumentParser};
+        use crate::{
+            argument::ArgumentError,
+            argument_parser::{AddArgumentError, ArgumentParser, ArgumentParserError},
+        };
 
         #[test]
         fn test_non_conflicting_arg() {
@@ -2216,7 +1663,9 @@ mod test {
             );
             assert_eq!(
                 child.unwrap_err(),
-                ArgumentError::DuplicateArgumentNameValues("[h, help]".to_string())
+                ArgumentParserError::AddArgumentError(AddArgumentError::ArgumentError(
+                    ArgumentError::DuplicateArgumentNameValues("[h, help]".to_string())
+                ))
             )
         }
 
@@ -2248,373 +1697,6 @@ mod test {
                 None,
             );
             assert!(child.is_ok());
-        }
-    }
-
-    mod extraneous_parsing {
-        use std::string::ParseError;
-
-        use crate::argument_parser::ParserError;
-
-        use super::*;
-        #[test]
-        fn long_option_value_with_argument() {
-            let namespace = ArgumentParser::default()
-                .add_argument::<&str>(
-                    vec!["--foo"],
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .parse_args(Some(vec!["--foo=bar".to_string()]))
-                .unwrap();
-            assert_eq!(
-                namespace.get_one_value::<String>("foo").unwrap(),
-                "bar".to_string()
-            )
-        }
-
-        #[test]
-        fn long_option_value_with_multiple_nargs() {
-            let parser = ArgumentParser::default()
-                .add_argument::<&str>(
-                    vec!["--foo"],
-                    None,
-                    Some(NArgs::Exact(2)),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .parse_args(Some(vec!["--foo=bar".to_string()]));
-            assert_eq!(
-                parser.unwrap_err(),
-                ParserError::IncorrectValueCount("[--foo]".to_string(), NArgs::Exact(2), 1)
-            );
-        }
-
-        #[test]
-        fn longer_flag_args() {
-            let namespace = ArgumentParser::default()
-                .add_argument::<&str>(
-                    vec!["---foo"],
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .parse_args(Some(vec!["---foo".to_string(), "bar".to_string()]))
-                .unwrap();
-            assert_eq!(
-                namespace.get_one_value::<String>("foo").unwrap(),
-                "bar".to_string()
-            );
-        }
-
-        #[test]
-        fn multiple_short_flags() {
-            let namespace = ArgumentParser::default()
-                .add_argument::<&str>(
-                    vec!["-a"],
-                    Some("store_true"),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .add_argument::<&str>(
-                    vec!["-b"],
-                    Some("store_true"),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .add_argument::<&str>(
-                    vec!["-c"],
-                    Some("store_true"),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .parse_args(Some(vec!["-abc".to_string()]))
-                .unwrap();
-            assert_eq!(namespace.get_one_value::<bool>("a").unwrap(), true);
-            assert_eq!(namespace.get_one_value::<bool>("b").unwrap(), true);
-            assert_eq!(namespace.get_one_value::<bool>("c").unwrap(), true);
-        }
-
-        #[test]
-        fn multiple_short_flags_with_optional_value() {
-            let namespace = ArgumentParser::default()
-                .add_argument::<&str>(
-                    vec!["-a"],
-                    Some("store_true"),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .add_argument::<&str>(
-                    vec!["-b"],
-                    Some("store_true"),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .add_argument::<&str>(
-                    vec!["-c"],
-                    None,
-                    Some(NArgs::Exact(1)),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .parse_args(Some(vec!["-abcD".to_string()]))
-                .unwrap();
-            assert_eq!(namespace.get_one_value::<bool>("a").unwrap(), true);
-            assert_eq!(namespace.get_one_value::<bool>("b").unwrap(), true);
-            assert_eq!(
-                namespace.get_one_value::<String>("c").unwrap(),
-                "D".to_string()
-            );
-        }
-
-        #[test]
-        fn multiple_short_flags_invalid_flag() {
-            let parser = ArgumentParser::default()
-                .add_argument::<&str>(
-                    vec!["-a"],
-                    Some("store_true"),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .add_argument::<&str>(
-                    vec!["-b"],
-                    Some("store_true"),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .parse_args(Some(vec!["-acb".to_string()]))
-                .unwrap_err();
-            assert_eq!(parser, ParserError::InvalidFlagArgument("c".to_string()));
-        }
-
-        #[test]
-        fn multiple_short_flags_with_optional_arg_invalid_nargs() {
-            let parser = ArgumentParser::default()
-                .add_argument::<&str>(
-                    vec!["-a"],
-                    Some("store_true"),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .add_argument::<&str>(
-                    vec!["-b"],
-                    Some("store_true"),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .parse_args(Some(vec!["-abC".to_string()]))
-                .unwrap_err();
-            assert_eq!(
-                parser,
-                ParserError::IncorrectValueCount("[-b]".to_string(), NArgs::Exact(0), 1)
-            );
-        }
-
-        #[test]
-        fn multiple_short_flags_invalid_nargs() {
-            let parser = ArgumentParser::default()
-                .add_argument::<&str>(
-                    vec!["-a"],
-                    None,
-                    Some(NArgs::Exact(2)),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .parse_args(Some(vec!["-a".to_string()]))
-                .unwrap_err();
-            assert_eq!(
-                parser,
-                ParserError::IncorrectValueCount("[-a]".to_string(), NArgs::Exact(2), 0)
-            );
-        }
-
-        #[test]
-        fn all_remaining_args_positional() {
-            let parser = ArgumentParser::default()
-                .add_argument::<&str>(
-                    vec!["a"],
-                    None,
-                    Some(NArgs::Exact(1)),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap();
-            let namespace_err = parser.parse_args(Some(vec!["-g".to_string()])).unwrap_err();
-            assert_eq!(
-                namespace_err,
-                ParserError::InvalidFlagArgument("g".to_string())
-            );
-            let namespace = parser
-                .parse_args(Some(vec!["--".to_string(), "-g".to_string()]))
-                .unwrap();
-            assert_eq!(
-                namespace.get_one_value::<String>("a").unwrap(),
-                "-g".to_string()
-            );
-        }
-
-        #[test]
-        fn all_remaining_args_positional_with_flag() {
-            let namespace = ArgumentParser::default()
-                .add_argument::<&str>(
-                    vec!["a"],
-                    None,
-                    Some(NArgs::Exact(1)),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .add_argument::<&str>(
-                    vec!["-b"],
-                    None,
-                    Some(NArgs::Exact(1)),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .unwrap()
-                .parse_args(Some(vec![
-                    "-b".to_string(),
-                    "f".to_string(),
-                    "--".to_string(),
-                    "-g".to_string(),
-                ]))
-                .unwrap();
-            assert_eq!(
-                namespace.get_one_value::<String>("a").unwrap(),
-                "-g".to_string()
-            );
-            assert_eq!(
-                namespace.get_one_value::<String>("b").unwrap(),
-                "f".to_string()
-            );
         }
     }
 }
