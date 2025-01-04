@@ -200,7 +200,7 @@ impl Argument {
         }?;
 
         let required = match (required, &default) {
-            (None, ArgumentDefault::None) => Ok(true),
+            (None, ArgumentDefault::None) => Ok(false),
             (Some(true), ArgumentDefault::None) => Ok(true),
             // (Some(false), None) => match &action {
             //     Action::Store(_) => Err(ArgumentError::NonRequiredArgumentNotGivenDefaultValue(

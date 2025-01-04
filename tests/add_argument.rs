@@ -622,10 +622,7 @@ mod add_argument {
             None,
             Some(NArgs::AnyNumber),
             None,
-            Some(ArgumentDefault::Value(vec![
-                false.to_string(),
-                true.to_string(),
-            ])),
+            Some(ArgumentDefault::Value(vec![5.to_string(), 1.to_string()])),
             Some(vec![
                 vec![5.to_string(), 1.to_string()],
                 vec![3.to_string(), 1.to_string()],

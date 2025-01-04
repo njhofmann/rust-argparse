@@ -62,6 +62,8 @@ pub enum ParsingError {
     ChoicesError(ChoicesError),
     #[error("no arguments were found to process remaining raw arguments {0}")]
     UnprocessedRawArguments(String),
+    #[error("multiple arguments from mutually exclusive groups were found")]
+    DuplicateMutuallyExclusiveGroupArgument,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -70,6 +72,132 @@ pub enum SubparserError {
     DuplicateNameInParser(String),
     #[error("subparser identifier \"{0}\" has been registered for multiple subparsers across multiple subparser managers")]
     DupblicateNameAcrossParsers(String),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ArgumentGroup {
+    title: Option<String>,
+    description: Option<String>,
+    suppress_missing_attributes: bool,
+    required: bool,
+    mutually_exclusive: bool,
+    parser: ArgumentParser,
+}
+
+impl ArgumentGroup {
+    pub fn new(
+        title: Option<&str>,
+        description: Option<&str>,
+        suppress_missing_attributes: Option<bool>,
+    ) -> ArgumentGroup {
+        ArgumentGroup {
+            title: title.map(|x| x.to_string()),
+            description: description.map(|x| x.to_string()),
+            suppress_missing_attributes: suppress_missing_attributes.unwrap_or(false),
+            required: false,
+            mutually_exclusive: false,
+            parser: ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                None,
+            )
+            .unwrap(),
+        }
+    }
+
+    pub fn add_argument<T: ToString>(
+        &self,
+        name: Vec<&str>,
+        action: Option<&str>,
+        nargs: Option<NArgs>,
+        constant: Option<Vec<T>>,
+        default: Option<ArgumentDefault<T>>,
+        choices: Option<Vec<Vec<T>>>,
+        required: Option<bool>,
+        help: Option<&str>,
+        metavar: Option<&str>,
+        dest: Option<&str>,
+        version: Option<&str>,
+    ) -> Result<Self, AddArgumentError> {
+        let mut new_group = self.clone();
+        new_group.parser = self.parser.add_argument(
+            name, action, nargs, constant, default, choices, required, help, metavar, dest, version,
+        )?;
+        Ok(new_group)
+    }
+}
+
+impl Default for ArgumentGroup {
+    fn default() -> Self {
+        ArgumentGroup::new(None, None, None)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct MutuallyExclusiveGroup(ArgumentGroup);
+
+impl Default for MutuallyExclusiveGroup {
+    fn default() -> Self {
+        Self::new(None, None, None, None)
+    }
+}
+
+impl MutuallyExclusiveGroup {
+    pub fn new(
+        title: Option<&str>,
+        description: Option<&str>,
+        suppress_missing_attributes: Option<bool>,
+        required: Option<bool>,
+    ) -> MutuallyExclusiveGroup {
+        MutuallyExclusiveGroup(ArgumentGroup {
+            title: title.map(|x| x.to_string()),
+            description: description.map(|x| x.to_string()),
+            suppress_missing_attributes: suppress_missing_attributes.unwrap_or(false),
+            required: required.unwrap_or(false),
+            mutually_exclusive: true,
+            parser: ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                None,
+            )
+            .unwrap(),
+        })
+    }
+
+    pub fn add_argument<T: ToString>(
+        &self,
+        name: Vec<&str>,
+        action: Option<&str>,
+        nargs: Option<NArgs>,
+        constant: Option<Vec<T>>,
+        default: Option<ArgumentDefault<T>>,
+        choices: Option<Vec<Vec<T>>>,
+        required: Option<bool>,
+        help: Option<&str>,
+        metavar: Option<&str>,
+        dest: Option<&str>,
+        version: Option<&str>,
+    ) -> Result<Self, AddArgumentError> {
+        let mut new_group = self.clone();
+        new_group.0 = self.0.add_argument(
+            name, action, nargs, constant, default, choices, required, help, metavar, dest, version,
+        )?;
+        Ok(new_group)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -183,6 +311,9 @@ pub struct ArgumentParser {
     version_arg_added: bool,
     conflict_handler: ConflictHandlingStrategy,
     subparser_managers: Option<Vec<SubparserManager>>,
+    groups: Vec<ArgumentGroup>,
+    seen_mutually_exclusive_groups: Vec<bool>,
+    arg_name_to_seen_mutually_exclusive_group_mapping: HashMap<ArgumentName, usize>,
 }
 
 impl Display for ArgumentParser {
@@ -265,6 +396,9 @@ impl ArgumentParser {
             help_arg_added: false,
             version_arg_added: false,
             subparser_managers: None,
+            groups: vec![],
+            seen_mutually_exclusive_groups: vec![],
+            arg_name_to_seen_mutually_exclusive_group_mapping: HashMap::new(),
         };
 
         if add_help.unwrap_or(true) && !parser.help_arg_added {
@@ -288,28 +422,36 @@ impl ArgumentParser {
         // do this after setting up the parser
         if let Some(parents) = parents {
             for parent_parser in parents.iter() {
-                for argument in parent_parser.arguments() {
-                    // this is a pruned down version of add_argument
-                    (
-                        parser.flag_args,
-                        parser.positional_args,
-                        parser.arg_name_mapping,
-                        parser.allow_abbrev_mapping,
-                    ) = parser
-                        .check_for_duplicate_arg_names(argument.name())
-                        .map_err(|e| {
-                            ArgumentParserError::AddArgumentError(AddArgumentError::ArgumentError(
-                                e,
-                            ))
-                        })?;
-                    let cloned_arg = argument.clone();
-                    let temp_dest = cloned_arg.dest().clone();
-                    let dest: Option<&str> = temp_dest.as_deref();
-                    parser = parser
-                        .store_argument(cloned_arg, dest)
-                        .map_err(ArgumentParserError::AddArgumentError)?;
-                }
+                parser = parser.add_parser_arguments(parent_parser)?;
             }
+        }
+
+        Ok(parser)
+    }
+
+    fn add_parser_arguments(
+        &self,
+        other_parser: &ArgumentParser,
+    ) -> Result<Self, ArgumentParserError> {
+        let mut parser = self.clone();
+        for argument in other_parser.arguments() {
+            // this is a pruned down version of add_argument
+            (
+                parser.flag_args,
+                parser.positional_args,
+                parser.arg_name_mapping,
+                parser.allow_abbrev_mapping,
+            ) = parser
+                .check_for_duplicate_arg_names(argument.name())
+                .map_err(|e| {
+                    ArgumentParserError::AddArgumentError(AddArgumentError::ArgumentError(e))
+                })?;
+            let cloned_arg = argument.clone();
+            let temp_dest = cloned_arg.dest().clone();
+            let dest: Option<&str> = temp_dest.as_deref();
+            parser = parser
+                .store_argument(cloned_arg, dest)
+                .map_err(ArgumentParserError::AddArgumentError)?;
         }
         Ok(parser)
     }
@@ -613,6 +755,11 @@ impl ArgumentParser {
             help_arg_added: help_arg_added,
             version_arg_added: version_arg_added,
             subparser_managers: self.subparser_managers.clone(),
+            groups: self.groups.clone(),
+            seen_mutually_exclusive_groups: self.seen_mutually_exclusive_groups.clone(),
+            arg_name_to_seen_mutually_exclusive_group_mapping: self
+                .arg_name_to_seen_mutually_exclusive_group_mapping
+                .clone(),
         };
 
         if let Action::AppendConst(_) = argument.action() {
@@ -775,6 +922,11 @@ impl ArgumentParser {
             help_arg_added: self.help_arg_added,
             version_arg_added: self.version_arg_added,
             subparser_managers: self.subparser_managers.clone(),
+            groups: self.groups.clone(),
+            seen_mutually_exclusive_groups: self.seen_mutually_exclusive_groups.clone(),
+            arg_name_to_seen_mutually_exclusive_group_mapping: self
+                .arg_name_to_seen_mutually_exclusive_group_mapping
+                .clone(),
         };
         new_parser.store_argument(new_argument, dest)
     }
@@ -810,7 +962,8 @@ impl ArgumentParser {
         let mut set_next_posn_group_idx = false;
         let mut all_remaining_args_positional = false;
         let mut subparser_parsing: Option<(Namespace, Vec<String>)> = None;
-        // staring idx of the last posn arg group
+        let mut seen_mutually_exclusive_groups = self.seen_mutually_exclusive_groups.clone(); // clone this so method remains functional & parser can be reused
+                                                                                              // staring idx of the last posn arg group
         let mut last_posn_arg_group_idx: Option<usize> = None; // tracks indices in arg_and_raw_arg_range
                                                                // contine to parse so long as posn arguments are left or raw args haven't been looked at (may have flags)
 
@@ -819,6 +972,20 @@ impl ArgumentParser {
             FromArg(String),
             AfterArgument(usize, usize),
         }
+
+        let in_seen_mutually_exclusive_group =
+            |arg: &Argument, seen_mutually_exclusive_groups: &Vec<bool>| -> Option<(usize, bool)> {
+                // None --> not in a mutually exclusive group
+                // Some((group_idx, false)) --> in a mutually exclusive group, but no group arguments have yet been seen
+                // Some((group_idx, true)) --> in a mutually exclusive group where one group argument has been encountered
+                // pass group_idx for any manipulations that may need to be done
+                self.arg_name_to_seen_mutually_exclusive_group_mapping
+                    .get(arg.name())
+                    .map(|idx| {
+                        let seen = seen_mutually_exclusive_groups.get(*idx).unwrap().clone();
+                        (idx.clone(), seen)
+                    })
+            };
 
         while idx < raw_args.len()
             || (cur_posn_argument_idx.is_some_and(|idx| idx < self.positional_args.len()))
@@ -938,6 +1105,19 @@ impl ArgumentParser {
 
             let last_arg_idx = found_arguments.len() - 1;
             for (i, found_argument) in found_arguments.into_iter().enumerate() {
+                // check if mutually exclusive group
+                if let Some((seen_mutually_exclusive_group_idx, in_seen_mutually_exclusive_group)) =
+                    in_seen_mutually_exclusive_group(
+                        &found_argument,
+                        &seen_mutually_exclusive_groups,
+                    )
+                {
+                    if in_seen_mutually_exclusive_group {
+                        return Err(ParsingError::DuplicateMutuallyExclusiveGroupArgument);
+                    }
+                    seen_mutually_exclusive_groups[seen_mutually_exclusive_group_idx] = true;
+                }
+
                 // only use arg value on last found arg
                 let argument_value = if !(i == last_arg_idx && argument_value.is_some()) {
                     let end_or_new_flag_arg = |idx: &usize| {
@@ -1294,7 +1474,16 @@ impl ArgumentParser {
                 if arg.required() {
                     missing_required_flag_args.push(arg)
                 } else {
-                    if !self.suppress_missing_attributes && !arg.default().is_suppress() {
+                    let mutually_exclusive_group_seen = match in_seen_mutually_exclusive_group(
+                        arg,
+                        &seen_mutually_exclusive_groups,
+                    ) {
+                        Some((_, v)) => v,
+                        None => false,
+                    };
+                    if !mutually_exclusive_group_seen
+                        && (!self.suppress_missing_attributes && !arg.default().is_suppress())
+                    {
                         let default_value = match arg.default() {
                             ArgumentDefault::None => vec![],
                             ArgumentDefault::Suppress => panic!("this arm shouldn't be selected"),
@@ -1405,12 +1594,29 @@ impl ArgumentParser {
         Ok(new_parser)
     }
 
-    pub fn add_argument_group() {
-        todo!()
+    pub fn add_argument_group(&self, group: ArgumentGroup) -> Result<Self, ArgumentParserError> {
+        let mut new_parser = self.clone();
+        new_parser = new_parser.add_parser_arguments(&group.parser)?;
+
+        new_parser.groups.push(group.clone());
+        if group.mutually_exclusive {
+            new_parser.seen_mutually_exclusive_groups.push(false);
+            let group_idx = new_parser.seen_mutually_exclusive_groups.len() - 1;
+            for argument in group.parser.arguments() {
+                new_parser
+                    .arg_name_to_seen_mutually_exclusive_group_mapping
+                    .insert(argument.name().clone(), group_idx);
+            }
+        }
+
+        Ok(new_parser)
     }
 
-    pub fn add_mutually_exclusive_group() {
-        todo!()
+    pub fn add_mutually_exclusive_group(
+        &self,
+        group: MutuallyExclusiveGroup,
+    ) -> Result<Self, ArgumentParserError> {
+        self.add_argument_group(group.0)
     }
 
     pub fn print_usage(&self) {
