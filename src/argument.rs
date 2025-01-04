@@ -1,6 +1,7 @@
 use crate::action::{Action, ActionError};
 use crate::argument_name::ArgumentNameError;
 use crate::choices::{Choices, ChoicesError};
+use crate::default::ArgumentDefault;
 use crate::nargs::NArgs;
 use crate::prefix_chars::{PrefixChars, PrefixCharsError};
 use crate::InvalidChoice;
@@ -58,7 +59,7 @@ pub struct Argument {
     required: bool,
     help: Option<String>,
     choices: Option<Choices>,
-    default: Option<Vec<String>>,
+    default: ArgumentDefault<String>,
     nargs: NArgs,
     action: Action,
     metavar: Option<String>,
@@ -82,8 +83,9 @@ impl Display for Argument {
             builder += format(format_args!(", choices: {}", choices)).as_str();
         }
 
-        if let Some(default) = self.default.as_ref() {
-            let default_str = string_vec_to_string(default, true);
+        if self.default.has_value() {
+            let default_value = self.default.get_value();
+            let default_str = string_vec_to_string(default_value, true);
             builder += format(format_args!(", default: {}", default_str)).as_str();
         }
 
@@ -127,7 +129,7 @@ impl Argument {
         &self.choices
     }
 
-    pub fn default(&self) -> &Option<Vec<String>> {
+    pub fn default(&self) -> &ArgumentDefault<String> {
         &self.default
     }
 
@@ -136,7 +138,7 @@ impl Argument {
         action: Option<&str>,
         nargs: Option<NArgs>,
         constant: Option<Vec<String>>,
-        default: Option<Vec<String>>,
+        default: Option<ArgumentDefault<String>>,
         choices: Option<Vec<Vec<String>>>,
         required: Option<bool>,
         help: Option<&str>,
@@ -162,11 +164,13 @@ impl Argument {
             (_, Some(_)) => Err(ArgumentError::RequiredGivenToUnsupportedAction),
         }?;
 
+        let default = default.unwrap_or(ArgumentDefault::None);
+
         match (&action, &default) {
             (Action::Store(_), _) | (Action::Append(_), _) => Ok(()),
-            (action, Some(_)) => Err(ArgumentError::DefaultGivenForUnsupportedAction(
-                action.to_string(),
-            )),
+            (action, ArgumentDefault::Value(_)) => Err(
+                ArgumentError::DefaultGivenForUnsupportedAction(action.to_string()),
+            ),
             _ => Ok(()),
         }?;
 
@@ -188,7 +192,7 @@ impl Argument {
             | (Action::Help, None)
             | (Action::Count(_), None) => Ok(NArgs::Exact(0)), // allow nothing
             (_, Some(nargs)) => Ok(nargs),
-            _ => Ok(if default.is_some() {
+            _ => Ok(if default.has_value() {
                 NArgs::AnyNumber
             } else {
                 NArgs::Exact(1)
@@ -196,19 +200,24 @@ impl Argument {
         }?;
 
         let required = match (required, &default) {
-            (None, None) => Ok(true),
-            (Some(true), None) => Ok(true),
-            (Some(false), None) => match &action {
-                Action::Store(_) => Err(ArgumentError::NonRequiredArgumentNotGivenDefaultValue(
+            (None, ArgumentDefault::None) => Ok(true),
+            (Some(true), ArgumentDefault::None) => Ok(true),
+            // (Some(false), None) => match &action {
+            //     Action::Store(_) => Err(ArgumentError::NonRequiredArgumentNotGivenDefaultValue(
+            //         name.to_string(),
+            //     )),
+            //     _ => Ok(false),
+            // },
+            (Some(true), ArgumentDefault::Suppress) => panic!(),
+            (None, ArgumentDefault::Value(_))
+            | (Some(false), _)
+            | (_, ArgumentDefault::Suppress) => Ok(false),
+            (Some(true), ArgumentDefault::Value(default)) => {
+                Err(ArgumentError::RequiredArgumentDefaultValueGiven(
                     name.to_string(),
-                )),
-                _ => Ok(false),
-            },
-            (None, Some(_)) | (Some(false), Some(_)) => Ok(false),
-            (Some(true), Some(default)) => Err(ArgumentError::RequiredArgumentDefaultValueGiven(
-                name.to_string(),
-                string_vec_to_string(&default, true),
-            )),
+                    string_vec_to_string(&default, true),
+                ))
+            }
         }?;
 
         match (&action, &choices) {
@@ -239,8 +248,8 @@ impl Argument {
             })
             .transpose()?;
 
-        if default.is_some() && nargs_given {
-            let default_len = default.as_ref().unwrap().len().clone();
+        if default.has_value() && nargs_given {
+            let default_len = default.get_value().len().clone();
             if !nargs.is_valid_number(default_len) {
                 return Err(ArgumentError::InvalidDefaultValueLength(
                     default_len,
@@ -249,17 +258,11 @@ impl Argument {
             }
         }
 
-        let default = default.map(|x| {
-            x.into_iter()
-                .map(|y| y.to_string())
-                .collect::<Vec<String>>()
-        });
-
-        if default.is_some() && choices.is_some() {
+        if default.has_value() && choices.is_some() {
             choices
                 .as_ref()
                 .unwrap()
-                .arg_value_in_choices(&default.as_ref().unwrap())
+                .arg_value_in_choices(default.get_value())
                 .map_err(ArgumentError::ChoicesError)?
         };
 
@@ -475,6 +478,7 @@ mod test {
         argument::{Action, Argument, ArgumentError, Choices, NArgs},
         argument_name::ArgumentName,
         choices::ChoicesError,
+        default::ArgumentDefault,
         prefix_chars::PrefixChars,
         InvalidChoice,
     };
@@ -505,7 +509,7 @@ mod test {
                 required: true,
                 help: None,
                 choices: None,
-                default: None,
+                default: ArgumentDefault::None,
                 nargs: NArgs::Exact(1),
                 action: Action::Store(vec![]),
                 metavar: None,
@@ -537,7 +541,7 @@ mod test {
                 required: true,
                 help: Some("this is an argument".to_string()),
                 choices: None,
-                default: None,
+                default: ArgumentDefault::None,
                 nargs: NArgs::Exact(1),
                 action: Action::Store(vec![]),
                 metavar: None,
@@ -572,7 +576,7 @@ mod test {
                 choices: Some(
                     Choices::new(&vec![vec!["a".to_string()], vec!["c".to_string()]]).unwrap()
                 ),
-                default: None,
+                default: ArgumentDefault::None,
                 nargs: NArgs::Exact(1),
                 metavar: None,
                 dest: None,
@@ -631,7 +635,7 @@ mod test {
                 None,
                 None,
                 None,
-                Some(vec!["a".to_string()]),
+                Some(ArgumentDefault::Value(vec!["a".to_string()])),
                 None,
                 None,
                 None,
@@ -646,7 +650,7 @@ mod test {
                 required: false,
                 help: None,
                 choices: None,
-                default: Some(vec!["a".to_string()]),
+                default: ArgumentDefault::Value(vec!["a".to_string()]),
                 nargs: NArgs::AnyNumber,
                 dest: None,
                 metavar: None,
@@ -663,7 +667,7 @@ mod test {
                 None,
                 None,
                 None,
-                Some(vec!["a".to_string()]),
+                Some(ArgumentDefault::Value(vec!["a".to_string()])),
                 None,
                 Some(true),
                 None,
@@ -689,7 +693,7 @@ mod test {
                 None,
                 Some(NArgs::Exact(1)),
                 None,
-                Some(vec!["c".to_string()]),
+                Some(ArgumentDefault::Value(vec!["c".to_string()])),
                 Some(vec![vec!["a".to_string()], vec!["b".to_string()]]),
                 None,
                 None,
@@ -713,7 +717,7 @@ mod test {
                 None,
                 Some(NArgs::Exact(2)),
                 None,
-                Some(vec!["a".to_string()]),
+                Some(ArgumentDefault::Value(vec!["a".to_string()])),
                 None,
                 None,
                 None,

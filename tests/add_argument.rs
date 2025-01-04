@@ -5,7 +5,9 @@ mod add_argument {
         argument::{Argument, ArgumentError},
         argument_name::ArgumentName,
         argument_parser::{AddArgumentError, ArgumentParser},
+        default::ArgumentDefault,
         nargs::NArgs,
+        parse_result::RetrievalError,
         prefix_chars::PrefixChars,
     };
 
@@ -53,6 +55,123 @@ mod add_argument {
             )
             .unwrap()
         )
+    }
+
+    #[test]
+    fn missing_non_required_argument_no_value_() {
+        let parser = ArgumentParser::default()
+            .add_argument::<&str>(
+                vec!["--foo"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let namespace = parser.parse_args(Some(vec![])).unwrap();
+        assert!(namespace.get::<String>("foo").unwrap().is_empty())
+    }
+
+    #[test]
+    fn missing_non_required_argument_no_value_global_suppress() {
+        let parser = ArgumentParser::new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(true),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .add_argument::<&str>(
+            vec!["--foo"],
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let namespace = parser.parse_args(Some(vec![])).unwrap();
+        assert_eq!(
+            namespace.get::<String>("foo").unwrap_err(),
+            RetrievalError::InvalidKey("foo".to_string())
+        );
+    }
+
+    #[test]
+    fn missing_non_required_argument_no_value_global_suppress_override() {
+        let parser = ArgumentParser::new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(true),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .add_argument::<&str>(
+            vec!["--foo"],
+            None,
+            None,
+            None,
+            Some(ArgumentDefault::Value(vec!["fool"])),
+            None,
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let namespace = parser.parse_args(Some(vec![])).unwrap();
+        assert_eq!(
+            namespace.get::<String>("foo").unwrap_err(),
+            RetrievalError::InvalidKey("foo".to_string())
+        );
+    }
+
+    #[test]
+    fn missing_non_required_argument_no_value_local_suppress() {
+        let parser = ArgumentParser::default()
+            .add_argument::<&str>(
+                vec!["--foo"],
+                None,
+                None,
+                None,
+                Some(ArgumentDefault::Suppress),
+                None,
+                Some(false),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let namespace = parser.parse_args(Some(vec![])).unwrap();
+        assert_eq!(
+            namespace.get::<String>("foo").unwrap_err(),
+            RetrievalError::InvalidKey("foo".to_string())
+        );
     }
 
     #[test]
@@ -308,34 +427,6 @@ mod add_argument {
     }
 
     #[test]
-    fn add_non_required_flag_argument_with_default() {
-        assert_eq!(
-            default_arg_parser()
-                .add_argument::<&str>(
-                    vec!["--foo"],
-                    None,
-                    Some(NArgs::AnyNumber),
-                    None,
-                    None,
-                    None,
-                    Some(false),
-                    None,
-                    None,
-                    None,
-                    None
-                )
-                .unwrap_err(),
-            AddArgumentError::ArgumentError(
-                ArgumentError::NonRequiredArgumentNotGivenDefaultValue(
-                    ArgumentName::new(vec!["--foo"], &PrefixChars::default())
-                        .unwrap()
-                        .to_string()
-                )
-            )
-        )
-    }
-
-    #[test]
     fn add_required_flag_argument_with_default() {
         assert_eq!(
             default_arg_parser()
@@ -344,7 +435,7 @@ mod add_argument {
                     None,
                     None,
                     None,
-                    Some(vec!["bar"]),
+                    Some(ArgumentDefault::Value(vec!["bar"])),
                     None,
                     Some(true),
                     None,
@@ -491,7 +582,10 @@ mod add_argument {
             None,
             Some(NArgs::AnyNumber),
             None,
-            Some(vec![5.6.to_string(), 1.2.to_string()]),
+            Some(ArgumentDefault::Value(vec![
+                5.6.to_string(),
+                1.2.to_string(),
+            ])),
             Some(vec![
                 vec![5.6.to_string(), 1.2.to_string()],
                 vec![3.4.to_string(), 11.9.to_string()],
@@ -509,7 +603,7 @@ mod add_argument {
                 None,
                 Some(NArgs::AnyNumber),
                 None,
-                Some(vec![5.6, 1.2]),
+                Some(ArgumentDefault::Value(vec![5.6, 1.2])),
                 Some(vec![vec![5.6, 1.2], vec![3.4, 11.9]]),
                 None,
                 None,
@@ -528,7 +622,10 @@ mod add_argument {
             None,
             Some(NArgs::AnyNumber),
             None,
-            Some(vec![5.to_string(), 1.to_string()]),
+            Some(ArgumentDefault::Value(vec![
+                false.to_string(),
+                true.to_string(),
+            ])),
             Some(vec![
                 vec![5.to_string(), 1.to_string()],
                 vec![3.to_string(), 1.to_string()],
@@ -546,7 +643,7 @@ mod add_argument {
                 None,
                 Some(NArgs::AnyNumber),
                 None,
-                Some(vec![5, 1]),
+                Some(ArgumentDefault::Value(vec![5, 1])),
                 Some(vec![vec![5, 1], vec![3, 1]]),
                 None,
                 None,
@@ -576,7 +673,10 @@ mod add_argument {
             None,
             Some(NArgs::AnyNumber),
             None,
-            Some(vec![false.to_string(), true.to_string()]),
+            Some(ArgumentDefault::Value(vec![
+                false.to_string(),
+                true.to_string(),
+            ])),
             Some(vec![
                 vec![true.to_string(), false.to_string()],
                 vec![false.to_string(), true.to_string()],
@@ -594,7 +694,7 @@ mod add_argument {
                 None,
                 Some(NArgs::AnyNumber),
                 None,
-                Some(vec![false, true]),
+                Some(ArgumentDefault::Value(vec![false, true])),
                 Some(vec![vec![true, false], vec![false, true]]),
                 None,
                 None,
@@ -646,7 +746,10 @@ mod add_argument {
             None,
             None,
             None,
-            Some(vec![Test::One.to_string(), Test::One.to_string()]),
+            Some(ArgumentDefault::Value(vec![
+                Test::One.to_string(),
+                Test::One.to_string(),
+            ])),
             Some(vec![
                 vec![Test::One.to_string(), Test::One.to_string()],
                 vec![Test::Two.to_string(), Test::Two.to_string()],
@@ -664,7 +767,7 @@ mod add_argument {
                 None,
                 Some(NArgs::AnyNumber),
                 None,
-                Some(vec![Test::One, Test::One]),
+                Some(ArgumentDefault::Value(vec![Test::One, Test::One])),
                 Some(vec![vec![Test::One, Test::One], vec![Test::Two, Test::Two]]),
                 None,
                 None,

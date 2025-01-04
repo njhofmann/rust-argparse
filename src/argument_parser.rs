@@ -10,6 +10,7 @@ use crate::{
     argument_name::{ArgumentName, ArgumentNameError},
     choices::ChoicesError,
     conclict_handling_strategy::{ConflictHandlingStrategy, ConflictHandlingStrategyError},
+    default::ArgumentDefault,
     nargs::NArgs,
     parse_result::Namespace,
     prefix_chars::{PrefixChars, PrefixCharsError},
@@ -176,7 +177,7 @@ pub struct ArgumentParser {
     prog: String,
     epilog: Option<String>,
     prefix_chars: PrefixChars,
-    argument_default: Option<String>,
+    suppress_missing_attributes: bool,
     allow_abbrev_mapping: Option<HashMap<String, (usize, bool)>>,
     help_arg_added: bool,
     version_arg_added: bool,
@@ -230,7 +231,7 @@ impl ArgumentParser {
         epilog: Option<&str>,
         parents: Option<Vec<ArgumentParser>>,
         prefix_chars: Option<&str>,
-        argument_default: Option<Vec<&str>>, // TODO set default arg if given
+        suppress_missing_attributes: Option<bool>,
         conflict_handler: Option<&str>,
         add_help: Option<bool>,
         allow_abbrev: Option<bool>,
@@ -254,8 +255,7 @@ impl ArgumentParser {
             epilog: epilog.map(|x| x.to_string()),
             prefix_chars: PrefixChars::new(prefix_chars)
                 .map_err(ArgumentParserError::PrefixCharsError)?,
-            argument_default: argument_default
-                .map(|x| x.into_iter().map(|y| y.to_string()).collect()),
+            suppress_missing_attributes: suppress_missing_attributes.unwrap_or(false),
             allow_abbrev_mapping: match allow_abbrev.unwrap_or(true) {
                 true => Some(HashMap::new()),
                 false => None,
@@ -607,7 +607,7 @@ impl ArgumentParser {
             prog: self.prog.clone(),
             epilog: self.epilog.clone(),
             prefix_chars: self.prefix_chars.clone(),
-            argument_default: self.argument_default.clone(),
+            suppress_missing_attributes: self.suppress_missing_attributes,
             allow_abbrev_mapping: new_allow_abbrev_mapping, // TODO correct default
             conflict_handler: self.conflict_handler,
             help_arg_added: help_arg_added,
@@ -723,7 +723,7 @@ impl ArgumentParser {
         action: Option<&str>,
         nargs: Option<NArgs>,
         constant: Option<Vec<T>>,
-        default: Option<Vec<T>>,
+        default: Option<ArgumentDefault<T>>,
         choices: Option<Vec<Vec<T>>>,
         required: Option<bool>,
         help: Option<&str>,
@@ -739,7 +739,13 @@ impl ArgumentParser {
                 .map_err(AddArgumentError::ArgumentError)?;
         // this shouldn't happen often
         let constant = constant.map(|x| x.into_iter().map(|y| y.to_string()).collect());
-        let default = default.map(|x| x.into_iter().map(|y| y.to_string()).collect());
+        let default: Option<ArgumentDefault<String>> = default.map(|v| match v {
+            ArgumentDefault::None => ArgumentDefault::None,
+            ArgumentDefault::Suppress => ArgumentDefault::Suppress,
+            ArgumentDefault::Value(vec) => {
+                ArgumentDefault::Value(vec.into_iter().map(|x| x.to_string()).collect())
+            }
+        });
         let choices = choices.map(|inner| {
             inner
                 .into_iter()
@@ -763,7 +769,7 @@ impl ArgumentParser {
             prog: self.prog.clone(),
             epilog: self.epilog.clone(),
             prefix_chars: self.prefix_chars.clone(),
-            argument_default: self.argument_default.clone(),
+            suppress_missing_attributes: self.suppress_missing_attributes,
             allow_abbrev_mapping: new_allow_abbrev_mapping, // TODO correct default
             conflict_handler: self.conflict_handler,
             help_arg_added: self.help_arg_added,
@@ -1207,8 +1213,8 @@ impl ArgumentParser {
                             .arg_value_in_choices(&arg_val_vec)
                             .map_err(ParsingError::ChoicesError)?;
                         let mut new_v = v.clone();
-                        if let Some(default) = argument.default() {
-                            new_v.append(&mut default.clone())
+                        if argument.default().has_value() {
+                            new_v.append(&mut argument.default().get_value().clone())
                         }
                         new_v.append(&mut arg_val_vec);
                         Ok(argument.with_action(Action::Append(new_v)))
@@ -1262,9 +1268,9 @@ impl ArgumentParser {
                         let arg_val = if (argument.nargs() == &NArgs::AnyNumber
                             || argument.nargs() == &NArgs::ZeroOrOne)
                             && arg_val_vec.is_empty()
-                            && argument.default().is_some()
+                            && argument.default().has_value()
                         {
-                            argument.default().as_ref().unwrap().clone()
+                            argument.default().get_value().clone()
                         } else {
                             arg_val_vec
                         };
@@ -1288,17 +1294,16 @@ impl ArgumentParser {
                 if arg.required() {
                     missing_required_flag_args.push(arg)
                 } else {
-                    match arg.action() {
-                        Action::Store(_) => {
-                            processed_arguments.insert(
-                                arg.with_action(Action::Store(
-                                    arg.default()
-                                        .clone()
-                                        .expect("this should be guaranteed to have a default set"),
-                                )),
-                            );
+                    if !self.suppress_missing_attributes && !arg.default().is_suppress() {
+                        let default_value = match arg.default() {
+                            ArgumentDefault::None => vec![],
+                            ArgumentDefault::Suppress => panic!("this arm shouldn't be selected"),
+                            ArgumentDefault::Value(vec) => vec.clone(),
+                        };
+                        if let Action::Store(_) = arg.action() {
+                            processed_arguments
+                                .insert(arg.with_action(Action::Store(default_value)));
                         }
-                        _ => (),
                     }
                 }
             }
@@ -1408,10 +1413,6 @@ impl ArgumentParser {
         todo!()
     }
 
-    pub fn get_default(&self, dest: &str) -> &Option<String> {
-        todo!()
-    }
-
     pub fn print_usage(&self) {
         println!("{}", self.format_usage())
     }
@@ -1445,14 +1446,10 @@ impl ArgumentParser {
 
 #[cfg(test)]
 mod test {
-    use std::{fmt::Display, str::FromStr};
 
     use crate::{
-        argument::ArgumentError,
-        argument_parser::{AddArgumentError, ArgumentParserError},
-        conclict_handling_strategy::ConflictHandlingStrategyError,
-        nargs::NArgs,
-        prefix_chars::PrefixCharsError,
+        argument_parser::ArgumentParserError,
+        conclict_handling_strategy::ConflictHandlingStrategyError, prefix_chars::PrefixCharsError,
     };
 
     use super::ArgumentParser;

@@ -167,6 +167,7 @@ mod test {
 
     use crate::{
         argument_parser::{ArgumentParser, ParsingError},
+        default::ArgumentDefault,
         nargs::NArgs,
     };
 
@@ -247,7 +248,7 @@ mod test {
             None,
             Some(NArgs::Exact(2)),
             None,
-            Some(vec!["1", "2"]),
+            Some(ArgumentDefault::Value(vec!["1", "2"])),
             Some(vec![vec!["one", "two"], vec!["1", "2"]]),
             Some(false),
             None,
@@ -303,7 +304,7 @@ mod test {
             None,
             Some(NArgs::Exact(1)),
             None,
-            Some(vec![1]),
+            Some(ArgumentDefault::Value(vec![1])),
             Some(vec![vec![1], vec![2]]),
             Some(false),
             None,
@@ -317,7 +318,7 @@ mod test {
             None,
             Some(NArgs::Exact(1)),
             None,
-            Some(vec![true]),
+            Some(ArgumentDefault::Value(vec![true])),
             None,
             Some(false),
             None,

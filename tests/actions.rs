@@ -262,7 +262,7 @@ mod actions {
     }
 
     mod store {
-        use py_arg_parse::{argument_parser::ParsingError, nargs::NArgs};
+        use py_arg_parse::{argument_parser::ParsingError, default::ArgumentDefault, nargs::NArgs};
 
         use super::*;
 
@@ -274,7 +274,7 @@ mod actions {
                     None,
                     Some(NArgs::AnyNumber),
                     None,
-                    Some(vec!["a"]),
+                    Some(ArgumentDefault::Value(vec!["a"])),
                     None,
                     None,
                     None,
@@ -288,7 +288,7 @@ mod actions {
                     None,
                     Some(NArgs::AnyNumber),
                     None,
-                    Some(vec!["b"]),
+                    Some(ArgumentDefault::Value(vec!["b"])),
                     None,
                     None,
                     None,
@@ -302,7 +302,7 @@ mod actions {
                     None,
                     Some(NArgs::ZeroOrOne),
                     None,
-                    Some(vec!["c"]),
+                    Some(ArgumentDefault::Value(vec!["c"])),
                     None,
                     None,
                     None,
