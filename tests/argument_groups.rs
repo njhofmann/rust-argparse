@@ -1,6 +1,8 @@
 mod argument_groups {
     mod mutually_exclusive {
-        use py_arg_parse::argument_parser::{ArgumentParser, MutuallyExclusiveGroup, ParsingError};
+        use py_arg_parse::argument_parser::{
+            ArgumentGroupError, ArgumentParser, MutuallyExclusiveGroup, ParsingError,
+        };
 
         #[test]
         fn mutually_exclusive_group_working() {
@@ -105,7 +107,12 @@ mod argument_groups {
                     "6".to_string(),
                 ]))
                 .unwrap_err();
-            assert_eq!(err, ParsingError::DuplicateMutuallyExclusiveGroupArgument)
+            assert_eq!(
+                err,
+                ParsingError::ArgumentGroupError(
+                    ArgumentGroupError::DuplicateMutuallyExclusiveGroupArguments
+                )
+            )
         }
     }
 }
