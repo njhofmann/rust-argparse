@@ -78,6 +78,8 @@ pub enum SubparserError {
 pub enum ArgumentGroupError {
     #[error("multiple arguments from mutually exclusive group were found")]
     DuplicateMutuallyExclusiveGroupArguments,
+    #[error("missing required argument group {0}")]
+    MissingRequiredArgumentGroup(String)
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -162,6 +164,14 @@ impl Default for ArgumentGroup {
     }
 }
 
+impl Display for ArgumentGroup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let arg_name_strs: Vec<String> = self.parser.arguments().into_iter().map(|x| x.name().to_string()).collect();
+        let display_str = string_vec_to_string(&arg_name_strs, true);
+        write!(f, "{}", display_str)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MutuallyExclusiveGroup(ArgumentGroup);
 
@@ -220,6 +230,12 @@ impl MutuallyExclusiveGroup {
             name, action, nargs, constant, default, choices, required, help, metavar, dest, version,
         )?;
         Ok(new_group)
+    }
+}
+
+impl Display for MutuallyExclusiveGroup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0.to_string())
     }
 }
 
@@ -981,7 +997,7 @@ impl ArgumentParser {
         let mut set_next_posn_group_idx = false;
         let mut all_remaining_args_positional = false;
         let mut subparser_parsing: Option<(Namespace, Vec<String>)> = None;
-        let mut seen_mutually_exclusive_groups = self.argument_groups.clone(); // clone this so method remains functional & parser can be reused
+        let mut argument_groups = self.argument_groups.clone(); // clone this so method remains functional & parser can be reused
                                                                                // staring idx of the last posn arg group
         let mut last_posn_arg_group_idx: Option<usize> = None; // tracks indices in arg_and_raw_arg_range
                                                                // contine to parse so long as posn arguments are left or raw args haven't been looked at (may have flags)
@@ -1012,22 +1028,6 @@ impl ArgumentParser {
                 }
             };
 
-            let mutually_exclusive_group_seen =
-            |arg: &Argument,
-             seen_mutually_exclusive_groups: &mut Vec<ArgumentGroup>|
-             -> bool {
-                let group_idx = self
-                    .arg_name_to_seen_mutually_exclusive_group_mapping
-                    .get(arg.name());
-                match group_idx {
-                    None => false,
-                    Some(idx) => {
-                        let arg_group = seen_mutually_exclusive_groups.get(*idx).unwrap();
-                        debug_assert!(arg_group.mutually_exclusive);
-                        arg_group.seen
-                    }
-                }
-            };
 
         while idx < raw_args.len()
             || (cur_posn_argument_idx.is_some_and(|idx| idx < self.positional_args.len()))
@@ -1150,7 +1150,7 @@ impl ArgumentParser {
                 // check if mutually exclusive group
                 in_seen_mutually_exclusive_group(
                     &found_argument,
-                    &mut seen_mutually_exclusive_groups,
+                    &mut argument_groups,
                 )
                 .map_err(ParsingError::ArgumentGroupError)?;
 
@@ -1503,6 +1503,13 @@ impl ArgumentParser {
             }
         }
 
+        // check for missing required argument groups (mutually exclusive only)
+        for arg_group in &argument_groups {
+            if arg_group.required && !arg_group.seen {
+                return Err(ParsingError::ArgumentGroupError(ArgumentGroupError::MissingRequiredArgumentGroup(arg_group.to_string())))
+            }
+        }
+
         // defaults for missing flag arguments / rquired missing args
         let mut missing_required_flag_args = Vec::new();
         for arg in self.flag_args.iter() {
@@ -1510,13 +1517,7 @@ impl ArgumentParser {
                 if arg.required() {
                     missing_required_flag_args.push(arg)
                 } else {
-                    println!("2 {:?}", arg);
-                    let is_in_mutually_exclusive_group_and_seen = mutually_exclusive_group_seen(
-                        &arg,
-                        &mut seen_mutually_exclusive_groups,
-                    );
-                    println!("3 {:?}", seen_mutually_exclusive_groups);
-                    if !is_in_mutually_exclusive_group_and_seen && (!self.suppress_missing_attributes && !arg.default().is_suppress()) {
+                    if !self.suppress_missing_attributes && !arg.default().is_suppress() {
                         let default_value = match arg.default() {
                             ArgumentDefault::None => vec![],
                             ArgumentDefault::Suppress => panic!("this arm shouldn't be selected"),
