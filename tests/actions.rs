@@ -447,7 +447,61 @@ mod actions {
                     .unwrap_err(),
                 ParsingError::AmbiguousAbbreviatedArguments(
                     "bea".to_string(),
-                    "[beam, beast]".to_string()
+                    "[--beam, --beast]".to_string()
+                )
+            );
+        }
+
+        #[test]
+        fn same_name_diff_n_prefixes() {
+            let parser = ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+            )
+            .unwrap()
+            .add_argument::<&str>(
+                vec!["--foo"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap()
+            .add_argument::<&str>(
+                vec!["---foo"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            assert_eq!(
+                parser
+                    .parse_args(Some(vec!["--bea".to_string(), "test".to_string()]))
+                    .unwrap_err(),
+                ParsingError::AmbiguousAbbreviatedArguments(
+                    "bea".to_string(),
+                    "[--beam, --beast]".to_string()
                 )
             );
         }

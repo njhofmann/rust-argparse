@@ -9,7 +9,7 @@ use crate::{
     argument::{Argument, ArgumentError},
     argument_name::{ArgumentName, ArgumentNameError},
     choices::ChoicesError,
-    conclict_handling_strategy::{ConflictHandlingStrategy, ConflictHandlingStrategyError},
+    conclict_handling_strategy::{self, ConflictHandlingStrategy, ConflictHandlingStrategyError},
     default::ArgumentDefault,
     nargs::NArgs,
     parse_result::Namespace,
@@ -76,17 +76,18 @@ pub enum SubparserError {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ArgumentGroupError {
+    #[error("{0}")]
+    ConflictHandlingStrategyError(ConflictHandlingStrategyError),
     #[error("multiple arguments from mutually exclusive group were found")]
     DuplicateMutuallyExclusiveGroupArguments,
     #[error("missing required argument group {0}")]
-    MissingRequiredArgumentGroup(String)
+    MissingRequiredArgumentGroup(String),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ArgumentGroup {
     title: Option<String>,
     description: Option<String>,
-    suppress_missing_attributes: bool,
     required: bool,
     mutually_exclusive: bool,
     seen: bool,
@@ -98,11 +99,14 @@ impl ArgumentGroup {
         title: Option<&str>,
         description: Option<&str>,
         suppress_missing_attributes: Option<bool>,
-    ) -> ArgumentGroup {
-        ArgumentGroup {
+        conflict_handler: Option<&str>,
+    ) -> Result<ArgumentGroup, ArgumentGroupError> {
+        let conflict_handler = ConflictHandlingStrategy::new(conflict_handler)
+            .map_err(ArgumentGroupError::ConflictHandlingStrategyError)?
+            .to_string();
+        Ok(ArgumentGroup {
             title: title.map(|x| x.to_string()),
             description: description.map(|x| x.to_string()),
-            suppress_missing_attributes: suppress_missing_attributes.unwrap_or(false),
             required: false,
             mutually_exclusive: false,
             seen: false,
@@ -113,13 +117,13 @@ impl ArgumentGroup {
                 None,
                 None,
                 None,
-                None,
-                None,
+                suppress_missing_attributes,
+                Some(&conflict_handler),
                 Some(false),
                 None,
             )
             .unwrap(),
-        }
+        })
     }
 
     pub fn add_argument<T: ToString>(
@@ -156,17 +160,26 @@ impl ArgumentGroup {
             Ok(())
         }
     }
+
+    pub fn suppress_missing_attributes(&self) -> bool {
+        self.parser.suppress_missing_attributes
+    }
 }
 
 impl Default for ArgumentGroup {
     fn default() -> Self {
-        ArgumentGroup::new(None, None, None)
+        ArgumentGroup::new(None, None, None, None).unwrap()
     }
 }
 
 impl Display for ArgumentGroup {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let arg_name_strs: Vec<String> = self.parser.arguments().into_iter().map(|x| x.name().to_string()).collect();
+        let arg_name_strs: Vec<String> = self
+            .parser
+            .arguments()
+            .into_iter()
+            .map(|x| x.name().to_string())
+            .collect();
         let display_str = string_vec_to_string(&arg_name_strs, true);
         write!(f, "{}", display_str)
     }
@@ -177,7 +190,7 @@ pub struct MutuallyExclusiveGroup(ArgumentGroup);
 
 impl Default for MutuallyExclusiveGroup {
     fn default() -> Self {
-        Self::new(None, None, None, None)
+        Self::new(None, None, None, None, None).unwrap()
     }
 }
 
@@ -186,12 +199,15 @@ impl MutuallyExclusiveGroup {
         title: Option<&str>,
         description: Option<&str>,
         suppress_missing_attributes: Option<bool>,
+        conflict_handler: Option<&str>,
         required: Option<bool>,
-    ) -> MutuallyExclusiveGroup {
-        MutuallyExclusiveGroup(ArgumentGroup {
+    ) -> Result<MutuallyExclusiveGroup, ArgumentGroupError> {
+        let conflict_handler = ConflictHandlingStrategy::new(conflict_handler)
+            .map_err(ArgumentGroupError::ConflictHandlingStrategyError)?
+            .to_string();
+        Ok(MutuallyExclusiveGroup(ArgumentGroup {
             title: title.map(|x| x.to_string()),
             description: description.map(|x| x.to_string()),
-            suppress_missing_attributes: suppress_missing_attributes.unwrap_or(false),
             required: required.unwrap_or(false),
             mutually_exclusive: true,
             seen: false,
@@ -202,13 +218,13 @@ impl MutuallyExclusiveGroup {
                 None,
                 None,
                 None,
-                None,
-                None,
+                Some(suppress_missing_attributes.unwrap_or(false)),
+                Some(&conflict_handler),
                 Some(false),
                 None,
             )
             .unwrap(),
-        })
+        }))
     }
 
     pub fn add_argument<T: ToString>(
@@ -338,20 +354,21 @@ impl Default for SubparserManager {
 pub struct ArgumentParser {
     positional_args: Vec<Argument>,
     flag_args: Vec<Argument>,
-    arg_name_mapping: HashMap<String, (usize, bool)>, // vec idx & flag bool
+    // (n_prefixes, argument name) --> (index in list, is flag or positional argument)
+    arg_name_mapping: HashMap<(usize, String), (usize, bool)>,
     usage: Option<String>,
     desp: Option<String>,
     prog: String,
     epilog: Option<String>,
     prefix_chars: PrefixChars,
     suppress_missing_attributes: bool,
-    allow_abbrev_mapping: Option<HashMap<String, (usize, bool)>>,
+    allow_abbrev: bool,
     help_arg_added: bool,
     version_arg_added: bool,
     conflict_handler: ConflictHandlingStrategy,
     subparser_managers: Option<Vec<SubparserManager>>,
-    argument_groups: Vec<ArgumentGroup>,
-    arg_name_to_seen_mutually_exclusive_group_mapping: HashMap<ArgumentName, usize>,
+    argument_groups: Vec<ArgumentGroup>, // TODO make these optional?
+    arg_name_to_arg_group: HashMap<ArgumentName, usize>,
 }
 
 impl Display for ArgumentParser {
@@ -425,17 +442,14 @@ impl ArgumentParser {
             prefix_chars: PrefixChars::new(prefix_chars)
                 .map_err(ArgumentParserError::PrefixCharsError)?,
             suppress_missing_attributes: suppress_missing_attributes.unwrap_or(false),
-            allow_abbrev_mapping: match allow_abbrev.unwrap_or(true) {
-                true => Some(HashMap::new()),
-                false => None,
-            },
+            allow_abbrev: allow_abbrev.unwrap_or(true),
             conflict_handler: ConflictHandlingStrategy::new(conflict_handler)
                 .map_err(ArgumentParserError::ConflictHandlingStrategyError)?,
             help_arg_added: false,
             version_arg_added: false,
             subparser_managers: None,
             argument_groups: vec![],
-            arg_name_to_seen_mutually_exclusive_group_mapping: HashMap::new(),
+            arg_name_to_arg_group: HashMap::new(),
         };
 
         if add_help.unwrap_or(true) && !parser.help_arg_added {
@@ -477,12 +491,9 @@ impl ArgumentParser {
                 parser.flag_args,
                 parser.positional_args,
                 parser.arg_name_mapping,
-                parser.allow_abbrev_mapping,
-            ) = parser
-                .check_for_duplicate_arg_names(argument.name())
-                .map_err(|e| {
-                    ArgumentParserError::AddArgumentError(AddArgumentError::ArgumentError(e))
-                })?;
+            ) = parser.check_dup_arg_names(&argument).map_err(|e| {
+                ArgumentParserError::AddArgumentError(AddArgumentError::ArgumentError(e))
+            })?;
             let cloned_arg = argument.clone();
             let temp_dest = cloned_arg.dest().clone();
             let dest: Option<&str> = temp_dest.as_deref();
@@ -493,32 +504,43 @@ impl ArgumentParser {
         Ok(parser)
     }
 
-    fn check_for_duplicate_arg_names(
+    fn check_dup_arg_names(
         &self,
-        arg_name: &ArgumentName,
+        arg: &Argument,
     ) -> Result<
         (
             Vec<Argument>,
             Vec<Argument>,
-            HashMap<String, (usize, bool)>,
-            Option<HashMap<String, (usize, bool)>>,
+            HashMap<(usize, String), (usize, bool)>,
         ),
         ArgumentError,
     > {
         let handle_overlap = |argument: &Argument| -> Option<Result<Argument, ArgumentError>> {
-            let mut overlap = argument.name().overlap(arg_name);
-            if overlap.is_empty() {
-                Some(Ok(argument.clone()))
-            } else {
-                match self.conflict_handler {
+            let mut process_argument = Some(Ok(argument.clone()));
+            let mut overlap_on_name: Vec<String> = Vec::new();
+            let mut overlap_on_dest: Vec<(String, String, String)> = Vec::new();
+            for (n_prefixes, name, conflicting_dest) in argument.name_overlap(arg).into_iter() {
+                let prepended_name = self.prefix_chars.prepend_prefixes(n_prefixes, &name);
+                match conflicting_dest {
+                    None => overlap_on_name.push(prepended_name),
+                    Some((other_n_prefixes, dest)) => {
+                        let other_prepended_name =
+                            self.prefix_chars.prepend_prefixes(other_n_prefixes, &name);
+                        overlap_on_dest.push((prepended_name, other_prepended_name, dest))
+                    }
+                }
+            }
+
+            if !overlap_on_name.is_empty() {
+                process_argument = match self.conflict_handler {
                     ConflictHandlingStrategy::Error => {
-                        overlap.sort();
+                        overlap_on_name.sort();
                         Some(Err(ArgumentError::DuplicateArgumentNameValues(
-                            string_vec_to_string(&overlap, true),
+                            string_vec_to_string(&overlap_on_name, true),
                         )))
                     }
                     ConflictHandlingStrategy::Override => {
-                        if overlap.len() == argument.name().num_of_identifiers() {
+                        if overlap_on_name.len() == argument.name().num_of_identifiers() {
                             None
                         } else {
                             // if posn would always have overlap of 1 & be caught above
@@ -528,7 +550,7 @@ impl ArgumentParser {
                                 _ => panic!("argument with posn should have been removed above"),
                             };
 
-                            for overlap_name in overlap {
+                            for overlap_name in overlap_on_name {
                                 existing_name_map = existing_name_map
                                     .into_iter()
                                     .map(|(k, v)| {
@@ -546,35 +568,52 @@ impl ArgumentParser {
                     }
                 }
             }
+
+            // TODO can conflcit_handler here somehwo
+            if (process_argument.is_some() && process_argument.as_ref().unwrap().is_ok())
+                && !overlap_on_dest.is_empty()
+            {
+                overlap_on_dest.sort();
+                let overlap_on_dest_strings = overlap_on_dest
+                    .into_iter()
+                    .map(|(name1, name2, dest)| {
+                        "[".to_string() + &name1 + ", " + &name2 + ", " + &dest + "]"
+                    })
+                    .collect::<Vec<String>>();
+                return Some(Err(
+                    ArgumentError::DuplicateArgumentDestinationsForSameValue(string_vec_to_string(
+                        &overlap_on_dest_strings,
+                        true,
+                    )),
+                ));
+            }
+
+            return process_argument;
         };
 
         let new_flag_arguments = self
             .flag_args
             .iter()
-            .filter_map(|argument| handle_overlap(argument))
+            .filter_map(handle_overlap)
             .collect::<Result<Vec<Argument>, ArgumentError>>()?;
         let new_positional_arguments = self
             .positional_args
             .iter()
-            .filter_map(|argument| handle_overlap(argument))
+            .filter_map(handle_overlap)
             .collect::<Result<Vec<Argument>, ArgumentError>>()?;
-
-        let (new_arg_name_mapping, new_allow_abbrev_mapping) = if &new_flag_arguments.len()
-            < &self.flag_args.len()
+        // TODO reduce complexity here?
+        let new_arg_name_mapping = if &new_flag_arguments.len() < &self.flag_args.len()
             || &new_positional_arguments.len() < &self.positional_args.len()
         {
             self.init_arg_idx_mappings(&new_flag_arguments, &new_positional_arguments)
         } else {
-            (
-                self.arg_name_mapping.clone(),
-                self.allow_abbrev_mapping.clone(),
-            )
+            self.arg_name_mapping.clone()
         };
+
         Ok((
             new_flag_arguments,
             new_positional_arguments,
             new_arg_name_mapping,
-            new_allow_abbrev_mapping,
         ))
     }
 
@@ -600,9 +639,11 @@ impl ArgumentParser {
     fn parse_flag_argument_name(
         &self,
         argument_name: &String,
-        is_short_flag: bool,
+        n_prefixes: usize,
     ) -> Result<(Vec<Argument>, Option<String>), ParsingError> {
-        // check for values in form of "key=value"
+        debug_assert!(n_prefixes > 0); // 0 sometimes reservered as signifier for positional argument
+                                       // check for values in form of "key=value"
+        let is_short_flag = n_prefixes == 1;
         let mut optional_value: Option<String> = None;
         let split: &str = &argument_name.clone();
         let partitions: Vec<&str> = split.split("=").collect();
@@ -614,12 +655,16 @@ impl ArgumentParser {
         };
 
         // if allow abbrevated flags is true, check for possible matches
-        let location = if let Some(allow_abbrev_mapping) = self.allow_abbrev_mapping.as_ref() {
-            let possible_locations: Vec<(&String, &(usize, bool))> = allow_abbrev_mapping
+        let location = if self.allow_abbrev {
+            let possible_locations: Vec<((&usize, &String), &(usize, bool))> = self
+                .arg_name_mapping
                 .iter()
-                .filter_map(|(k, v)| {
-                    if k.starts_with(argument_name) {
-                        Some((k, v))
+                .filter_map(|((n_arg_prefixes, arg), v)| {
+                    if arg.len() > 1
+                        && n_prefixes == *n_arg_prefixes
+                        && arg.starts_with(argument_name)
+                    {
+                        Some(((n_arg_prefixes, arg), v))
                     } else {
                         None
                     }
@@ -632,7 +677,9 @@ impl ArgumentParser {
                 _ => {
                     let mut conflicting_arg_names: Vec<String> = possible_locations
                         .into_iter()
-                        .map(|(k, _)| k.clone())
+                        .map(|((n_prefixes, arg_name), _)| {
+                            self.prefix_chars.prepend_prefixes(*n_prefixes, arg_name)
+                        })
                         .collect();
                     conflicting_arg_names.sort();
                     Err(ParsingError::AmbiguousAbbreviatedArguments(
@@ -648,7 +695,9 @@ impl ArgumentParser {
         let location = match location {
             Some(x) => Ok(Some(x)),
             None => {
-                let location = self.arg_name_mapping.get(argument_name.as_str());
+                let location = self
+                    .arg_name_mapping
+                    .get(&(n_prefixes, argument_name.clone()));
 
                 if location.is_some() {
                     Ok(location)
@@ -661,21 +710,25 @@ impl ArgumentParser {
         }?;
 
         if location.is_none() {
+            debug_assert!(is_short_flag);
             debug_assert!(argument_name.len() > 2); // must be multiple short flag or short flag & value
             let possible_args = &argument_name[..argument_name.len() - 1];
             let possible_optional_value = &argument_name[argument_name.len() - 1..];
             let mut arguments = Vec::new();
+
             for arg in possible_args.chars() {
                 let arg = arg.to_string();
                 let &(idx, is_flag_arg) = self
                     .arg_name_mapping
-                    .get(arg.as_str())
+                    .get(&(n_prefixes, arg.clone()))
                     .ok_or(ParsingError::InvalidFlagArgument(arg.clone()))?;
                 debug_assert!(is_flag_arg);
                 arguments.push(self.flag_args[idx].clone());
             }
 
-            let optional_value_location = self.arg_name_mapping.get(possible_optional_value);
+            let optional_value_location = self
+                .arg_name_mapping
+                .get(&(n_prefixes, possible_optional_value.to_string()));
             if let Some(&(idx, is_flag_arg)) = optional_value_location {
                 debug_assert!(is_flag_arg);
                 let last_arg = arguments.last().unwrap();
@@ -767,15 +820,15 @@ impl ArgumentParser {
         }?;
 
         let mut new_arg_name_mapping = self.arg_name_mapping.clone();
-        for flag in argument.flag_values() {
-            new_arg_name_mapping.insert(flag, new_arg_location);
+        for (n_prefixes, flag) in argument.flag_values() {
+            new_arg_name_mapping.insert((n_prefixes, flag.clone()), new_arg_location);
         }
-
-        let new_allow_abbrev_mapping = self.add_arg_to_abbrev_mapping(
-            &argument,
-            new_arg_location.0,
-            &self.allow_abbrev_mapping,
-        );
+    
+        // let new_allow_abbrev_mapping = self.add_arg_to_abbrev_mapping(
+        //     &argument,
+        //     new_arg_location.0,
+        //     &self.allow_abbrev,
+        // );
 
         let mut new_parser = ArgumentParser {
             positional_args: new_positional_args,
@@ -787,15 +840,13 @@ impl ArgumentParser {
             epilog: self.epilog.clone(),
             prefix_chars: self.prefix_chars.clone(),
             suppress_missing_attributes: self.suppress_missing_attributes,
-            allow_abbrev_mapping: new_allow_abbrev_mapping, // TODO correct default
+            allow_abbrev: self.allow_abbrev, // TODO correct default
             conflict_handler: self.conflict_handler,
-            help_arg_added: help_arg_added,
-            version_arg_added: version_arg_added,
+            help_arg_added,
+            version_arg_added,
             subparser_managers: self.subparser_managers.clone(),
             argument_groups: self.argument_groups.clone(),
-            arg_name_to_seen_mutually_exclusive_group_mapping: self
-                .arg_name_to_seen_mutually_exclusive_group_mapping
-                .clone(),
+            arg_name_to_arg_group: self.arg_name_to_arg_group.clone(),
         };
 
         if let Action::AppendConst(_) = argument.action() {
@@ -820,7 +871,7 @@ impl ArgumentParser {
             )
             .unwrap()
             .set_as_helper_arg();
-            let existing_dest_arg = self.parse_flag_argument_name(&dest, false);
+            let existing_dest_arg = self.parse_flag_argument_name(&dest, 2);
             if existing_dest_arg.is_err() {
                 // TODO check against specific error
                 // if is_some() is already in
@@ -843,61 +894,26 @@ impl ArgumentParser {
         Ok(new_parser)
     }
 
-    fn add_arg_to_abbrev_mapping(
-        &self,
-        new_arg: &Argument,
-        idx: usize,
-        allow_abbrev_mapping: &Option<HashMap<String, (usize, bool)>>,
-    ) -> Option<HashMap<String, (usize, bool)>> {
-        allow_abbrev_mapping.as_ref().map(|x| {
-            let mut new_x = x.clone();
-            match new_arg.name() {
-                ArgumentName::Flag(map) => {
-                    for (_, v) in map.into_iter() {
-                        for argument in v.into_iter() {
-                            if argument.len() > 1 {
-                                new_x.insert(argument.clone(), (idx, true));
-                            }
-                        }
-                    }
-                    new_x
-                }
-                _ => x.clone(), // applies only to options
-            }
-        })
-    }
-
     fn init_arg_idx_mappings(
         &self,
         flag_args: &Vec<Argument>,
         positional_args: &Vec<Argument>,
-    ) -> (
-        HashMap<String, (usize, bool)>,
-        Option<HashMap<String, (usize, bool)>>,
-    ) {
-        let mut new_arg_idx_mapping: HashMap<String, (usize, bool)> = HashMap::new();
-        let mut new_allow_abbrev_mapping =
-            self.allow_abbrev_mapping.as_ref().map(|_| HashMap::new());
+    ) -> HashMap<(usize, String), (usize, bool)> {
+        let mut new_arg_idx_mapping: HashMap<(usize, String), (usize, bool)> = HashMap::new();
+
         for (idx, arg) in flag_args.iter().enumerate() {
-            for arg_name in arg.flag_values() {
-                new_arg_idx_mapping.insert(arg_name.clone(), (idx, true));
-                new_allow_abbrev_mapping = new_allow_abbrev_mapping.map(|mut x| {
-                    x.insert(arg_name.clone(), (idx, true));
-                    x
-                });
+            for (prefix_count, arg_name) in arg.flag_values() {
+                new_arg_idx_mapping.insert((prefix_count, arg_name.clone()), (idx, true));
             }
         }
-        for (idx, arg) in flag_args.iter().enumerate() {
-            for arg_name in arg.flag_values() {
-                new_arg_idx_mapping.insert(arg_name.clone(), (idx, true));
-                new_allow_abbrev_mapping =
-                    self.add_arg_to_abbrev_mapping(arg, idx, &new_allow_abbrev_mapping);
-            }
-        }
+
         for (idx, arg) in positional_args.iter().enumerate() {
-            new_arg_idx_mapping.insert(arg.flag_values().first().unwrap().clone(), (idx, false));
+            let (prefix_count, arg_name) = arg.flag_values().first().unwrap().clone();
+            debug_assert!(prefix_count == 0);
+            new_arg_idx_mapping.insert((prefix_count, arg_name.clone()), (idx, false));
         }
-        (new_arg_idx_mapping, new_allow_abbrev_mapping)
+
+        new_arg_idx_mapping
     }
 
     pub fn add_argument<T: ToString>(
@@ -917,9 +933,7 @@ impl ArgumentParser {
         let arg_name: ArgumentName = ArgumentName::new(name, &self.prefix_chars)
             .map_err(|e| AddArgumentError::ArgumentError(ArgumentError::ArgumentNameError(e)))?
             .clone();
-        let (new_flag_args, new_positional_args, new_arg_name_mapping, new_allow_abbrev_mapping) =
-            self.check_for_duplicate_arg_names(&arg_name)
-                .map_err(AddArgumentError::ArgumentError)?;
+
         // this shouldn't happen often
         let constant = constant.map(|x| x.into_iter().map(|y| y.to_string()).collect());
         let default: Option<ArgumentDefault<String>> = default.map(|v| match v {
@@ -942,6 +956,10 @@ impl ArgumentParser {
         )
         .map_err(AddArgumentError::ArgumentError)?;
 
+        let (new_flag_args, new_positional_args, new_arg_name_mapping) = self
+            .check_dup_arg_names(&new_argument)
+            .map_err(AddArgumentError::ArgumentError)?;
+
         let new_parser = ArgumentParser {
             positional_args: new_positional_args,
             flag_args: new_flag_args,
@@ -953,16 +971,16 @@ impl ArgumentParser {
             epilog: self.epilog.clone(),
             prefix_chars: self.prefix_chars.clone(),
             suppress_missing_attributes: self.suppress_missing_attributes,
-            allow_abbrev_mapping: new_allow_abbrev_mapping, // TODO correct default
+            allow_abbrev: self.allow_abbrev, // TODO correct default
             conflict_handler: self.conflict_handler,
             help_arg_added: self.help_arg_added,
             version_arg_added: self.version_arg_added,
             subparser_managers: self.subparser_managers.clone(),
             argument_groups: self.argument_groups.clone(),
-            arg_name_to_seen_mutually_exclusive_group_mapping: self
-                .arg_name_to_seen_mutually_exclusive_group_mapping
-                .clone(),
+            arg_name_to_arg_group: self.arg_name_to_arg_group.clone(),
         };
+        println!("{:?}", new_parser.conflict_handler);
+        println!("{:?}", new_parser.flag_args);
         new_parser.store_argument(new_argument, dest)
     }
 
@@ -998,36 +1016,34 @@ impl ArgumentParser {
         let mut all_remaining_args_positional = false;
         let mut subparser_parsing: Option<(Namespace, Vec<String>)> = None;
         let mut argument_groups = self.argument_groups.clone(); // clone this so method remains functional & parser can be reused
-                                                                               // staring idx of the last posn arg group
+                                                                // staring idx of the last posn arg group
         let mut last_posn_arg_group_idx: Option<usize> = None; // tracks indices in arg_and_raw_arg_range
                                                                // contine to parse so long as posn arguments are left or raw args haven't been looked at (may have flags)
 
         #[derive(Clone, Debug)]
         enum ArgumentValue {
             FromArg(String),
-            AfterArgument(usize, usize),
+            AfterArg(usize, usize),
         }
 
-        let in_seen_mutually_exclusive_group =
-            |arg: &Argument,
-             seen_mutually_exclusive_groups: &mut Vec<ArgumentGroup>|
-             -> Result<(), ArgumentGroupError> {
-                let group_idx = self
-                    .arg_name_to_seen_mutually_exclusive_group_mapping
-                    .get(arg.name());
-                match group_idx {
-                    None => Ok(()),
-                    Some(idx) => {
-                        let arg_group = seen_mutually_exclusive_groups.get(*idx).unwrap();
-                        debug_assert!(arg_group.mutually_exclusive);
-                        let mut new_arg_group = arg_group.clone();
+        let in_seen_mutually_exclusive_group = |arg: &Argument,
+                                                arg_groups: &mut Vec<ArgumentGroup>|
+         -> Result<(), ArgumentGroupError> {
+            match self.arg_name_to_arg_group.get(arg.name()) {
+                None => Ok(()),
+                Some(idx) => {
+                    let arg_group = arg_groups.get(*idx).unwrap();
+                    let mut new_arg_group = arg_group.clone();
+                    if !new_arg_group.mutually_exclusive {
+                        Ok(())
+                    } else {
                         let result = new_arg_group.has_been_seen();
-                        seen_mutually_exclusive_groups[*idx] = new_arg_group;
+                        arg_groups[*idx] = new_arg_group;
                         result
                     }
                 }
-            };
-
+            }
+        };
 
         while idx < raw_args.len()
             || (cur_posn_argument_idx.is_some_and(|idx| idx < self.positional_args.len()))
@@ -1082,7 +1098,7 @@ impl ArgumentParser {
                 // - single flag argument & single length value (--key=value)
                 // - multiple short flag arguments & maybe a single length value
                 let parsed_result: Result<(Vec<Argument>, Option<String>), ParsingError> =
-                    self.parse_flag_argument_name(&flag_raw_arg, n_prefixes == 1);
+                    self.parse_flag_argument_name(&flag_raw_arg, n_prefixes);
 
                 if keep_or_error_unknown_args
                     && parsed_result == Err(ParsingError::InvalidFlagArgument(flag_raw_arg.clone()))
@@ -1148,11 +1164,8 @@ impl ArgumentParser {
             let last_arg_idx = found_arguments.len() - 1;
             for (i, found_argument) in found_arguments.into_iter().enumerate() {
                 // check if mutually exclusive group
-                in_seen_mutually_exclusive_group(
-                    &found_argument,
-                    &mut argument_groups,
-                )
-                .map_err(ParsingError::ArgumentGroupError)?;
+                in_seen_mutually_exclusive_group(&found_argument, &mut argument_groups)
+                    .map_err(ParsingError::ArgumentGroupError)?;
 
                 // only use arg value on last found arg
                 let argument_value = if !(i == last_arg_idx && argument_value.is_some()) {
@@ -1279,7 +1292,7 @@ impl ArgumentParser {
                         {
                             let (group_start_idx, group_end_idx) = match argument_value {
                             ArgumentValue::FromArg(_) => panic!("FromArg should only be set on flag arguments which shouldn't be here present in this loop"),
-                            ArgumentValue::AfterArgument(group_start_idx, group_end_idx) => (group_start_idx, group_end_idx),
+                            ArgumentValue::AfterArg(group_start_idx, group_end_idx) => (group_start_idx, group_end_idx),
                         };
 
                             // TODO fix ordering iteration
@@ -1335,7 +1348,7 @@ impl ArgumentParser {
                             {
                                 let (start, end) = match argument_value {
                                 ArgumentValue::FromArg(_) => panic!("FromArg should only be set on flag arguments which shouldn't be here present in this loop"),
-                                ArgumentValue::AfterArgument(group_start_idx, group_end_idx) => (group_start_idx, group_end_idx),
+                                ArgumentValue::AfterArg(group_start_idx, group_end_idx) => (group_start_idx, group_end_idx),
                             };
 
                                 // only take items from first item in group, shift remaining one's down
@@ -1352,10 +1365,8 @@ impl ArgumentParser {
                                     start_idx = new_end;
                                 }
 
-                                arg_and_raw_arg_range[abs_idx + rel_idx] = (
-                                    arg.clone(),
-                                    ArgumentValue::AfterArgument(new_start, new_end),
-                                );
+                                arg_and_raw_arg_range[abs_idx + rel_idx] =
+                                    (arg.clone(), ArgumentValue::AfterArg(new_start, new_end));
                             }
                         }
 
@@ -1366,7 +1377,7 @@ impl ArgumentParser {
                         panic!("this should be set by now")
                     }
 
-                    ArgumentValue::AfterArgument(start_idx, end_idx.unwrap())
+                    ArgumentValue::AfterArg(start_idx, end_idx.unwrap())
                 } else {
                     argument_value.clone().unwrap()
                 };
@@ -1385,14 +1396,13 @@ impl ArgumentParser {
         for (argument, value) in arg_and_raw_arg_range {
             let mut arg_val_vec = match value {
                 ArgumentValue::FromArg(val) => vec![val],
-                ArgumentValue::AfterArgument(start, end) => raw_args[start..end].to_vec(),
+                ArgumentValue::AfterArg(start, end) => raw_args[start..end].to_vec(),
             };
             let new_argument = if argument.name().is_flag_argument() {
-                let argument = if processed_arguments.contains(&argument) {
-                    processed_arguments.get(&argument).unwrap().clone()
-                } else {
-                    argument
-                };
+                let argument = processed_arguments
+                    .get(&argument)
+                    .unwrap_or_else(|| &argument)
+                    .clone();
                 match argument.action() {
                     Action::Help => {
                         println!("{}", self.format_help());
@@ -1440,7 +1450,7 @@ impl ArgumentParser {
                             .dest()
                             .as_ref()
                             .expect("this should have been checked before");
-                        let parsed_argument = self.parse_flag_argument_name(&vec_key, false)?;
+                        let parsed_argument = self.parse_flag_argument_name(&vec_key, 2)?;
 
                         let mut storing_argument = if parsed_argument.1.is_some() {
                             panic!("optional argument value found for append const dest argument")
@@ -1506,7 +1516,9 @@ impl ArgumentParser {
         // check for missing required argument groups (mutually exclusive only)
         for arg_group in &argument_groups {
             if arg_group.required && !arg_group.seen {
-                return Err(ParsingError::ArgumentGroupError(ArgumentGroupError::MissingRequiredArgumentGroup(arg_group.to_string())))
+                return Err(ParsingError::ArgumentGroupError(
+                    ArgumentGroupError::MissingRequiredArgumentGroup(arg_group.to_string()),
+                ));
             }
         }
 
@@ -1517,12 +1529,28 @@ impl ArgumentParser {
                 if arg.required() {
                     missing_required_flag_args.push(arg)
                 } else {
-                    if !self.suppress_missing_attributes && !arg.default().is_suppress() {
+                    let arg_group_suppress =
+                        self.arg_name_to_arg_group.get(arg.name()).map_or_else(
+                            || false,
+                            |idx| {
+                                argument_groups.get(*idx).map_or_else(
+                                    || false,
+                                    |group| group.suppress_missing_attributes(),
+                                )
+                            },
+                        );
+
+                    // if default value for this argument should be suppressed acccording according to global, group, or argument level suppress bool
+                    let non_default_value = !(self.suppress_missing_attributes
+                        || arg_group_suppress
+                        || arg.default().is_suppress());
+                    if non_default_value {
                         let default_value = match arg.default() {
                             ArgumentDefault::None => vec![],
                             ArgumentDefault::Suppress => panic!("this arm shouldn't be selected"),
                             ArgumentDefault::Value(vec) => vec.clone(),
                         };
+                        // TODO panic or debug assert here for non-store action? default used in other actions at all?
                         if let Action::Store(_) = arg.action() {
                             processed_arguments
                                 .insert(arg.with_action(Action::Store(default_value)));
@@ -1633,13 +1661,11 @@ impl ArgumentParser {
         new_parser = new_parser.add_parser_arguments(&group.parser)?;
 
         new_parser.argument_groups.push(group.clone());
-        if group.mutually_exclusive {
-            let group_idx = new_parser.argument_groups.len() - 1;
-            for argument in group.parser.arguments() {
-                new_parser
-                    .arg_name_to_seen_mutually_exclusive_group_mapping
-                    .insert(argument.name().clone(), group_idx);
-            }
+        let group_idx = new_parser.argument_groups.len() - 1;
+        for argument in group.parser.arguments() {
+            new_parser
+                .arg_name_to_arg_group
+                .insert(argument.name().clone(), group_idx);
         }
 
         Ok(new_parser)
@@ -1687,8 +1713,10 @@ impl ArgumentParser {
 mod test {
 
     use crate::{
-        argument_parser::ArgumentParserError,
-        conclict_handling_strategy::ConflictHandlingStrategyError, prefix_chars::PrefixCharsError,
+        argument::ArgumentError,
+        argument_parser::{AddArgumentError, ArgumentParserError},
+        conclict_handling_strategy::ConflictHandlingStrategyError,
+        prefix_chars::PrefixCharsError,
     };
 
     use super::ArgumentParser;
@@ -1795,6 +1823,134 @@ mod test {
             ArgumentParserError::ConflictHandlingStrategyError(
                 ConflictHandlingStrategyError::UnsupportedConflictHandlingStrategy(
                     "foo".to_string()
+                )
+            )
+        )
+    }
+
+    #[test]
+    fn same_arg_name_diff_n_prefixes_diff_dest() {
+        let namespace = ArgumentParser::default()
+            .add_argument::<&str>(
+                vec!["--foo"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("foo1"),
+                None,
+            )
+            .unwrap()
+            .add_argument::<&str>(
+                vec!["---foo"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("foo2"),
+                None,
+            )
+            .unwrap()
+            .parse_args(Some(vec![
+                "---foo".to_string(),
+                "a".to_string(),
+                "--foo".to_string(),
+                "b".to_string(),
+            ]))
+            .unwrap();
+        assert_eq!(
+            namespace.get_one_value::<String>("foo1").unwrap(),
+            "b".to_string()
+        );
+        assert_eq!(
+            namespace.get_one_value::<String>("foo2").unwrap(),
+            "a".to_string()
+        );
+    }
+
+    #[test]
+    fn same_arg_name_same_n_prefixes_diff_dest() {
+        let error = ArgumentParser::default()
+            .add_argument::<&str>(
+                vec!["--foo"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("foo1"),
+                None,
+            )
+            .unwrap()
+            .add_argument::<&str>(
+                vec!["--foo"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("foo2"),
+                None,
+            )
+            .unwrap_err();
+        assert_eq!(
+            error,
+            AddArgumentError::ArgumentError(ArgumentError::DuplicateArgumentNameValues(
+                "[--foo]".to_string()
+            ))
+        )
+    }
+
+    #[test]
+    fn same_arg_name_diff_n_prefixes_same_dest() {
+        let error = ArgumentParser::default()
+            .add_argument::<&str>(
+                vec!["--foo"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("foo1"),
+                None,
+            )
+            .unwrap()
+            .add_argument::<&str>(
+                vec!["---foo"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("foo1"),
+                None,
+            )
+            .unwrap_err();
+        assert_eq!(
+            error,
+            AddArgumentError::ArgumentError(
+                ArgumentError::DuplicateArgumentDestinationsForSameValue(
+                    "[[--foo, ---foo, foo1]]".to_string()
                 )
             )
         )

@@ -5,7 +5,10 @@ A (near) complete implementation of Python's [argparse](https://docs.python.org/
     - suppress its creation with ...
 
 ### Unsupported Behavior
-
+- don't allow arguments with the same name, even if they have different prefix counts unless different destinations
+- argument groups can't have the same name
+    - do allow multiple no names
+- conflict handlers in argument groups resolve to last group with "resolve"
 - convert_arg_line_to_args as it required manual overriding in python
 - error on nonsensical argument pairings
 - `ArgumentParser::new(exit_on_error=...)`

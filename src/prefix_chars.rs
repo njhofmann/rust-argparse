@@ -48,6 +48,7 @@ impl PrefixChars {
                             }
                         })
                         .collect();
+
                     illegal_chars.sort(); // for consistent tests
                     if illegal_chars.is_empty() {
                         Ok(PrefixChars((temp, chars.next().unwrap())))
@@ -62,6 +63,14 @@ impl PrefixChars {
         }
     }
 
+    pub fn prepend_prefixes(&self, n_prefixes: usize, arg_name: &String) -> String {
+        let mut builder = "".to_string();
+        for _ in 0..n_prefixes {
+            builder += &self.default_char().to_string();
+        }
+        builder + arg_name
+    }
+
     pub fn parse_string(&self, string: &str) -> (String, usize) {
         for char in self.0 .0.clone().into_iter() {
             let mut n_matches = 0;
@@ -72,11 +81,13 @@ impl PrefixChars {
                     break;
                 }
             }
+
             if n_matches > 0 {
                 let parsed_string = &string[n_matches..];
                 return (parsed_string.to_string(), n_matches);
             }
         }
+
         return (string.to_string(), 0);
     }
 }

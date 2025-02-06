@@ -33,6 +33,8 @@ pub enum ArgumentError {
     InvalidChoiceLength(String, usize, String),
     #[error("found duplicate argument name values {0}")]
     DuplicateArgumentNameValues(String),
+    #[error("found duplicate argument destinations for follow duplicate argument names {0}")]
+    DuplicateArgumentDestinationsForSameValue(String),
     #[error("required is reserved for flag arguments")]
     RequiredMarkedForPositionalArgument,
     #[error("non-required argument {0} missing  adefault value")]
@@ -341,15 +343,17 @@ impl Argument {
             .map_or_else(|| self.fetch_value().to_string().clone(), |x| x.clone())
     }
 
-    pub fn flag_values(&self) -> Vec<String> {
+    pub fn flag_values(&self) -> Vec<(usize, &String)> {
         match self.name() {
-            ArgumentName::Positional(x) => vec![x.clone()],
+            ArgumentName::Positional(x) => vec![(0, &x)],
             ArgumentName::Flag(map) => {
                 let mut new_vec = Vec::new();
-                for v in map.values().into_iter() {
-                    let mut new_v = v.clone();
-                    new_vec.append(&mut new_v);
+                for (prefix_size, arg_names) in map {
+                    for arg_name in arg_names.into_iter() {
+                        new_vec.push((prefix_size.clone(), arg_name));
+                    }
                 }
+
                 new_vec
             }
         }
@@ -467,6 +471,50 @@ impl Argument {
 
     pub fn is_helper_arg(&self) -> bool {
         return self.is_helper_arg;
+    }
+
+    pub fn name_overlap(&self, other: &Argument) -> Vec<(usize, String, Option<(usize, String)>)> {
+        match (self.name(), other.name()) {
+            (ArgumentName::Positional(x), ArgumentName::Positional(y)) => {
+                if x == y {
+                    vec![(0, x.clone(), None)]
+                } else {
+                    vec![]
+                }
+            }
+            (ArgumentName::Positional(_), ArgumentName::Flag { .. }) => other.name_overlap(self),
+            (ArgumentName::Flag(map), ArgumentName::Positional(x)) => {
+                if map.into_iter().any(|(_, v)| v.contains(x)) {
+                    vec![(0, x.clone(), None)]
+                } else {
+                    vec![]
+                }
+            }
+            (ArgumentName::Flag(map1), ArgumentName::Flag(map2)) => {
+                // --foo & ---foo, diff destinations --> not conflict
+                // --foo & ---foo, same destinations --> conflict
+                // --foo & --foo --> conflict
+                let mut conflicts: Vec<(usize, String, Option<(usize, String)>)> = Vec::new();
+                for (n_prefixes_2, v2) in map2.into_iter() {
+                    for (n_prefixes_1, v1) in map1.into_iter() {
+                        for name in v2.into_iter() {
+                            if v1.contains(name) {
+                                if n_prefixes_1 == n_prefixes_2 {
+                                    conflicts.push((*n_prefixes_1, name.clone(), None))
+                                } else if self.fetch_value() == other.fetch_value() {
+                                    conflicts.push((
+                                        *n_prefixes_1,
+                                        name.clone(),
+                                        Some((*n_prefixes_2, self.fetch_value().to_string())),
+                                    ))
+                                }
+                            }
+                        }
+                    }
+                }
+                conflicts
+            }
+        }
     }
 }
 
