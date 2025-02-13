@@ -1,4 +1,3 @@
-#[cfg(test)]
 mod actions {
     use py_arg_parse::argument_parser::ArgumentParser;
     use py_arg_parse::parse_result::RetrievalError;
@@ -411,6 +410,46 @@ mod actions {
         }
 
         #[test]
+        fn allow_abbrev_same_name_diff_prefixes() {
+            let namespace = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["--foo"],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("a"),
+                    None,
+                )
+                .unwrap()
+                .add_argument::<&str>(
+                    vec!["---foo"],
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some("b"),
+                    None,
+                )
+                .unwrap()
+                .parse_args(Some(vec!["--f".to_string(), "t".to_string()]))
+                .unwrap();
+            assert_eq!(
+                namespace.get_one_value::<String>("a").unwrap(),
+                "t".to_string()
+            );
+            assert!(namespace.get::<String>("b").unwrap().is_empty());
+        }
+
+        #[test]
         fn allow_abbrev_conflicting_result() {
             let parser = ArgumentParser::default()
                 .add_argument::<&str>(
@@ -477,7 +516,7 @@ mod actions {
                 None,
                 None,
                 None,
-                None,
+                Some("a"),
                 None,
             )
             .unwrap()
@@ -491,18 +530,17 @@ mod actions {
                 None,
                 None,
                 None,
-                None,
+                Some("b"),
                 None,
             )
             .unwrap();
             assert_eq!(
                 parser
-                    .parse_args(Some(vec!["--bea".to_string(), "test".to_string()]))
-                    .unwrap_err(),
-                ParsingError::AmbiguousAbbreviatedArguments(
-                    "bea".to_string(),
-                    "[--beam, --beast]".to_string()
-                )
+                    .parse_args(Some(vec!["--foo".to_string(), "test".to_string()]))
+                    .unwrap()
+                    .get_one_value::<String>("a")
+                    .unwrap(),
+                "test".to_string()
             );
         }
 

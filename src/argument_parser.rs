@@ -9,7 +9,7 @@ use crate::{
     argument::{Argument, ArgumentError},
     argument_name::{ArgumentName, ArgumentNameError},
     choices::ChoicesError,
-    conclict_handling_strategy::{self, ConflictHandlingStrategy, ConflictHandlingStrategyError},
+    conclict_handling_strategy::{ConflictHandlingStrategy, ConflictHandlingStrategyError},
     default::ArgumentDefault,
     nargs::NArgs,
     parse_result::Namespace,
@@ -551,12 +551,16 @@ impl ArgumentParser {
                             };
 
                             for overlap_name in overlap_on_name {
+                                let (raw_name, other_n_prefixes) =
+                                    self.prefix_chars.parse_raw_name_string(&overlap_name);
                                 existing_name_map = existing_name_map
                                     .into_iter()
-                                    .map(|(k, v)| {
-                                        let mut new_v = v.clone();
-                                        new_v.retain(|x| x != &overlap_name);
-                                        (k, new_v)
+                                    .map(|(n_prefixes, names)| {
+                                        let mut new_names = names.clone();
+                                        new_names.retain(|x| {
+                                            x != &raw_name && other_n_prefixes != n_prefixes
+                                        });
+                                        (n_prefixes, new_names)
                                     })
                                     .collect();
                             }
@@ -823,12 +827,6 @@ impl ArgumentParser {
         for (n_prefixes, flag) in argument.flag_values() {
             new_arg_name_mapping.insert((n_prefixes, flag.clone()), new_arg_location);
         }
-    
-        // let new_allow_abbrev_mapping = self.add_arg_to_abbrev_mapping(
-        //     &argument,
-        //     new_arg_location.0,
-        //     &self.allow_abbrev,
-        // );
 
         let mut new_parser = ArgumentParser {
             positional_args: new_positional_args,
@@ -979,8 +977,6 @@ impl ArgumentParser {
             argument_groups: self.argument_groups.clone(),
             arg_name_to_arg_group: self.arg_name_to_arg_group.clone(),
         };
-        println!("{:?}", new_parser.conflict_handler);
-        println!("{:?}", new_parser.flag_args);
         new_parser.store_argument(new_argument, dest)
     }
 
@@ -1075,7 +1071,8 @@ impl ArgumentParser {
                     }
                     (None, None)
                 } else {
-                    let (flag_raw_arg, n_prefixes) = self.prefix_chars.parse_string(cur_raw_arg);
+                    let (flag_raw_arg, n_prefixes) =
+                        self.prefix_chars.parse_raw_name_string(cur_raw_arg);
                     (Some(flag_raw_arg), Some(n_prefixes))
                 }
             } else {
@@ -1173,8 +1170,9 @@ impl ArgumentParser {
                         if idx >= &raw_args.len() {
                             return true;
                         }
-                        let (_, n_prefixes) =
-                            self.prefix_chars.parse_string(&raw_args[idx.clone()]);
+                        let (_, n_prefixes) = self
+                            .prefix_chars
+                            .parse_raw_name_string(&raw_args[idx.clone()]);
                         return !all_remaining_args_positional && n_prefixes > 0;
                         // TODO redo this check
                     };
@@ -1658,6 +1656,7 @@ impl ArgumentParser {
 
     pub fn add_argument_group(&self, group: ArgumentGroup) -> Result<Self, ArgumentParserError> {
         let mut new_parser = self.clone();
+        println!("{:?}", group);
         new_parser = new_parser.add_parser_arguments(&group.parser)?;
 
         new_parser.argument_groups.push(group.clone());
@@ -2074,7 +2073,7 @@ mod test {
             assert_eq!(
                 child.unwrap_err(),
                 ArgumentParserError::AddArgumentError(AddArgumentError::ArgumentError(
-                    ArgumentError::DuplicateArgumentNameValues("[h, help]".to_string())
+                    ArgumentError::DuplicateArgumentNameValues("[--help, -h]".to_string())
                 ))
             )
         }

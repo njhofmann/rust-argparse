@@ -180,7 +180,6 @@ mod ordering {
             ],
             vec!["a", "b", "c", "d", "e"],
         );
-        println!("{:?}", namespace);
         assert_eq!(
             namespace.get::<String>("0").unwrap(),
             vec!["a".to_string(), "b".to_string(), "c".to_string(),]
@@ -616,9 +615,6 @@ mod ordering {
             ],
             vec!["a", "--1", "b", "c"],
         );
-        println!("{:?}", namespace);
-        // actual: {0: [a], 1: [b], 2: [c]}
-        // expected: {0: [], 1: [b, c], 2: [a]}
         assert!(namespace.get::<String>("0").unwrap().is_empty());
         assert_eq!(
             namespace.get::<String>("1").unwrap(),
@@ -671,7 +667,6 @@ mod ordering {
             ],
             vec!["a", "b", "c", "--1", "d"],
         );
-        println!("{:?}", namespace); // TODO fix me!
         assert_eq!(
             namespace.get::<String>("0").unwrap(),
             vec!["a".to_string(), "b".to_string()]

@@ -36,7 +36,7 @@ impl ArgumentName {
             Err(ArgumentNameError::EmptyArgumentName)
         } else if raw_arg_names.len() == 1 {
             let raw_arg_name = raw_arg_names.first().unwrap();
-            let (parsed_arg_name, n_prefixes) = prefix_chars.parse_string(raw_arg_name);
+            let (parsed_arg_name, n_prefixes) = prefix_chars.parse_raw_name_string(raw_arg_name);
             if n_prefixes == 0 {
                 Ok(ArgumentName::Positional(parsed_arg_name.to_string()))
             } else {
@@ -49,7 +49,8 @@ impl ArgumentName {
             let mut map: HashMap<usize, Vec<String>> = HashMap::new();
             let mut posn_arg_found = false;
             for raw_arg_name in raw_arg_names.into_iter() {
-                let (parsed_arg_name, n_prefixes) = prefix_chars.parse_string(raw_arg_name);
+                let (parsed_arg_name, n_prefixes) =
+                    prefix_chars.parse_raw_name_string(raw_arg_name);
                 if n_prefixes == 0 {
                     if !map.is_empty() {
                         return Err(ArgumentNameError::MixedArguments);
@@ -269,98 +270,49 @@ mod test {
         )
     }
 
-    // #[test]
-    // fn flag_arguments_contains() {
-    //     assert!(
-    //         ArgumentName::new(vec!["--foo", "-f"], &PrefixChars::default())
-    //             .unwrap()
-    //             .contains_name(&"foo".to_string())
-    //     )
-    // }
+    #[test]
+    fn flag_arguments_contains() {
+        assert!(
+            ArgumentName::new(vec!["--foo", "-f"], &PrefixChars::default())
+                .unwrap()
+                .contains_name(2, &"foo".to_string())
+        )
+    }
 
-    // #[test]
-    // fn flag_arguments_does_not_contain() {
-    //     assert!(
-    //         !ArgumentName::new(vec!["--foo", "-f"], &PrefixChars::default())
-    //             .unwrap()
-    //             .contains_name(&"bar".to_string())
-    //     )
-    // }
+    #[test]
+    fn flag_arguments_does_not_contain() {
+        assert!(
+            !ArgumentName::new(vec!["--foo", "-f"], &PrefixChars::default())
+                .unwrap()
+                .contains_name(1, &"bar".to_string())
+        )
+    }
 
-    // #[test]
-    // fn positional_arguments_contains() {
-    //     assert!(ArgumentName::new(vec!["foo"], &PrefixChars::default())
-    //         .unwrap()
-    //         .contains_name(&"foo".to_string()))
-    // }
+    #[test]
+    fn positional_arguments_contains() {
+        assert!(ArgumentName::new(vec!["foo"], &PrefixChars::default())
+            .unwrap()
+            .contains_name(0, &"foo".to_string()))
+    }
 
-    // #[test]
-    // fn positional_arguments_does_not_contain() {
-    //     assert!(!ArgumentName::new(vec!["foo"], &PrefixChars::default())
-    //         .unwrap()
-    //         .contains_name(&"flop".to_string()))
-    // }
+    #[test]
+    fn positional_arguments_does_not_contain() {
+        assert!(!ArgumentName::new(vec!["foo"], &PrefixChars::default())
+            .unwrap()
+            .contains_name(0, &"flop".to_string()))
+    }
 
-    // #[test]
-    // fn flag_argument_overlap() {
-    //     let a = ArgumentName::new(vec!["--foo", "-f", "--fooo"], &PrefixChars::default()).unwrap();
-    //     let b = ArgumentName::new(vec!["--flop", "-f", "--flob"], &PrefixChars::default()).unwrap();
-    //     assert_eq!(a.overlap(&b), b.overlap(&a));
-    //     assert_eq!(a.overlap(&b), vec!["f".to_string()])
-    // }
-
-    // #[test]
-    // fn flag_argument_no_overlap() {
-    //     let a = ArgumentName::new(vec!["--foo", "-f", "--fooo"], &PrefixChars::default()).unwrap();
-    //     let b =
-    //         ArgumentName::new(vec!["--flop", "-fp", "--flob"], &PrefixChars::default()).unwrap();
-    //     assert_eq!(a.overlap(&b), b.overlap(&a));
-    //     assert!(a.overlap(&b).is_empty())
-    // }
-
-    // #[test]
-    // fn positional_argument_overlap() {
-    //     let a = ArgumentName::new(vec!["f"], &PrefixChars::default()).unwrap();
-    //     let b = ArgumentName::new(vec!["f"], &PrefixChars::default()).unwrap();
-    //     assert_eq!(a.overlap(&b), b.overlap(&a));
-    //     assert_eq!(a.overlap(&b), vec!["f".to_string()])
-    // }
-
-    // #[test]
-    // fn positional_argument_no_overlap() {
-    //     let a = ArgumentName::new(vec!["foo"], &PrefixChars::default()).unwrap();
-    //     let b = ArgumentName::new(vec!["flop"], &PrefixChars::default()).unwrap();
-    //     assert_eq!(a.overlap(&b), b.overlap(&a));
-    //     assert!(a.overlap(&b).is_empty())
-    // }
-
-    // #[test]
-    // fn mixed_argument_overlap() {
-    //     let a = ArgumentName::new(vec!["--foo", "-f", "--fooo"], &PrefixChars::default()).unwrap();
-    //     let b = ArgumentName::new(vec!["f"], &PrefixChars::default()).unwrap();
-    //     assert_eq!(a.overlap(&b), b.overlap(&a));
-    //     assert_eq!(a.overlap(&b), vec!["f".to_string()])
-    // }
-
-    // #[test]
-    // fn mixed_argument_no_overlap() {
-    //     let a = ArgumentName::new(vec!["--foo", "-fp", "--fooo"], &PrefixChars::default()).unwrap();
-    //     let b = ArgumentName::new(vec!["flop"], &PrefixChars::default()).unwrap();
-    //     assert_eq!(a.overlap(&b), b.overlap(&a));
-    //     assert!(a.overlap(&b).is_empty())
-    // }
-
-    // #[test]
-    // fn multiple_prefix_chars() {
-    //     let arg_name = ArgumentName::new(
-    //         vec!["++foo", "-f", "@g"],
-    //         &PrefixChars::new(Some("+-@")).unwrap(),
-    //     )
-    //     .unwrap();
-    //     assert!(arg_name.contains_name(&"foo".to_string()));
-    //     assert!(arg_name.contains_name(&"f".to_string()));
-    //     assert!(arg_name.contains_name(&"g".to_string()));
-    // }
+    #[test]
+    fn multiple_prefix_chars() {
+        let arg_name = ArgumentName::new(
+            vec!["++foo", "-f", "@g"],
+            &PrefixChars::new(Some("+-@")).unwrap(),
+        )
+        .unwrap();
+        assert!(arg_name.contains_name(2, &"foo".to_string()));
+        assert!(arg_name.contains_name(1, &"f".to_string()));
+        assert!(arg_name.contains_name(1, &"g".to_string()));
+    }
 
     #[test]
     fn multiple_positional_argument() {

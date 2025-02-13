@@ -514,14 +514,6 @@ mod argument_groups {
             argument_parser::{AddArgumentError, ArgumentGroup, ArgumentParser},
         };
 
-        // TODO fix check_dup_arg_names
-        // TODO: BUG need to check n_prefixes matches when doing allow abbreviations?
-        // TODO test same name & prefixes --> error
-        // TODO test same name & diff prefixes & diff dest --> ok
-        //      fix dup bug
-        // TODO test same name & diff prefixes & same dest --> error
-        // TODO ovlerpa arg name tests
-
         #[test]
         fn conflict_handler_override() {
             let group = ArgumentGroup::new(None, None, None, Some("override"))
@@ -558,7 +550,6 @@ mod argument_groups {
             let namespace = parser
                 .parse_args(Some(vec!["-g".to_string(), "val".to_string()]))
                 .unwrap();
-            println!("{:?}", namespace);
             assert_eq!(
                 namespace.get_one_value::<String>("boo").unwrap(),
                 "val".to_string()
@@ -601,7 +592,7 @@ mod argument_groups {
             assert_eq!(
                 error,
                 AddArgumentError::ArgumentError(ArgumentError::DuplicateArgumentNameValues(
-                    "[g]".to_string(),
+                    "[-g]".to_string(),
                 ))
             )
         }
@@ -657,7 +648,7 @@ mod argument_groups {
             assert_eq!(
                 error,
                 AddArgumentError::ArgumentError(ArgumentError::DuplicateArgumentNameValues(
-                    "[foo]".to_string(),
+                    "[--foo]".to_string(),
                 ))
             )
         }

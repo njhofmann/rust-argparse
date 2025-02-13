@@ -71,7 +71,7 @@ impl PrefixChars {
         builder + arg_name
     }
 
-    pub fn parse_string(&self, string: &str) -> (String, usize) {
+    pub fn parse_raw_name_string(&self, string: &str) -> (String, usize) {
         for char in self.0 .0.clone().into_iter() {
             let mut n_matches = 0;
             for string_char in string.chars() {

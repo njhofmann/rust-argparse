@@ -222,7 +222,7 @@ mod add_argument {
         assert_eq!(
             parser
                 .add_argument::<&str>(
-                    vec!["--h"],
+                    vec!["-h"],
                     None,
                     None,
                     None,
@@ -236,7 +236,7 @@ mod add_argument {
                 )
                 .unwrap_err(),
             AddArgumentError::ArgumentError(ArgumentError::DuplicateArgumentNameValues(
-                "[h]".to_string()
+                "[-h]".to_string()
             ))
         )
     }
@@ -486,7 +486,7 @@ mod add_argument {
                 )
                 .unwrap_err(),
             AddArgumentError::ArgumentError(ArgumentError::DuplicateArgumentNameValues(
-                "[foo]".to_string()
+                "[--foo]".to_string()
             ))
         )
     }
