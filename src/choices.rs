@@ -39,10 +39,8 @@ impl Choices {
         if self.0.contains(raw_arg) {
             Ok(())
         } else {
-            let mut sorted_args = raw_arg.clone();
-            sorted_args.sort();
             Err(ChoicesError::InvalidChoice(InvalidChoice(
-                string_vec_to_string(&sorted_args, raw_arg.len() != 1),
+                string_vec_to_string(&raw_arg, raw_arg.len() != 1),
                 self.to_string(),
             )))
         }
@@ -51,11 +49,12 @@ impl Choices {
 
 impl Display for Choices {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let choices_strs: Vec<String> = self
+        let mut choices_strs: Vec<String> = self
             .0
             .iter()
             .map(|x| string_vec_to_string(x, x.len() != 1))
             .collect();
+        choices_strs.sort();
         write!(f, "{}", string_vec_to_string(&choices_strs, true))
     }
 }
