@@ -261,6 +261,8 @@ mod actions {
     }
 
     mod store {
+        use std::vec;
+
         use py_arg_parse::{argument_parser::ParsingError, default::ArgumentDefault, nargs::NArgs};
 
         use super::*;
@@ -679,6 +681,53 @@ mod actions {
                     .unwrap_err(),
                 ParsingError::InvalidFlagArgument("bea".to_string())
             );
+        }
+
+        #[test]
+        fn default_positional_arg() {
+            let namespace = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["a"],
+                    None,
+                    Some(NArgs::AnyNumber),
+                    None,
+                    Some(ArgumentDefault::Value(vec!["c", "d"])),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .parse_args(Some(Vec::new()))
+                .unwrap();
+            assert_eq!(
+                namespace.get_two_value::<String>("a").unwrap(),
+                ("c".to_string(), "d".to_string())
+            );
+
+            let namespace = ArgumentParser::default()
+                .add_argument::<&str>(
+                    vec!["a"],
+                    None,
+                    Some(NArgs::ZeroOrOne),
+                    None,
+                    Some(ArgumentDefault::Value(vec!["d"])),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+                .parse_args(Some(Vec::new()))
+                .unwrap();
+            assert_eq!(
+                namespace.get_one_value::<String>("a").unwrap(),
+                ("d".to_string())
+            )
         }
 
         #[test]

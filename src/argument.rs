@@ -25,6 +25,8 @@ pub enum ArgumentError {
     ArgumentNameError(ArgumentNameError),
     #[error("{0}")]
     ChoicesError(ChoicesError),
+    #[error("default value given to argument {0} with unsupported number of arguments {1}")]
+    DefaultValueForInvalidNargs(String, String),
     #[error("required argument {0} given default value {1}")]
     RequiredArgumentDefaultValueGiven(String, String),
     #[error("given default value has length {0} but expected {1} arguments")]
@@ -267,6 +269,16 @@ impl Argument {
                 .arg_value_in_choices(default.get_value())
                 .map_err(ArgumentError::ChoicesError)?
         };
+
+        match (default.clone(), nargs) {
+            (ArgumentDefault::Value(_), NArgs::AnyNumber)
+            | (ArgumentDefault::Value(_), NArgs::OneOrMore) => Ok(()),
+            (ArgumentDefault::Value(_), n) => Err(ArgumentError::DefaultValueForInvalidNargs(
+                name.to_string(),
+                n.to_string(),
+            )),
+            _ => Ok(()),
+        }?;
 
         Ok(Argument {
             name,
