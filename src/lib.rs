@@ -6,6 +6,7 @@ mod action;
 pub mod argument;
 pub mod argument_name;
 pub mod argument_parser;
+mod builder;
 mod choices;
 mod conclict_handling_strategy;
 pub mod default;

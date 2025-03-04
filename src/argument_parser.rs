@@ -8,6 +8,7 @@ use crate::{
     action::Action,
     argument::{Argument, ArgumentError},
     argument_name::{ArgumentName, ArgumentNameError},
+    builder::{AddArgumentError, ArgumentAdder, ArgumentBuilder},
     choices::ChoicesError,
     conclict_handling_strategy::{ConflictHandlingStrategy, ConflictHandlingStrategyError},
     default::ArgumentDefault,
@@ -34,22 +35,13 @@ pub enum ArgumentParserError {
     ConflictHandlingStrategyError(ConflictHandlingStrategyError),
 }
 
-// errors occuring when adding an argument
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum AddArgumentError {
-    #[error("{0}")]
-    ArgumentError(ArgumentError),
-    #[error("duplicated help argument added under argument {0}")]
-    DuplicateHelpArgument(String),
-    #[error("duplicated help argument added under argument {0}")]
-    DuplicateVersionArgument(String),
-}
-
 // errors that occur when parsing raw argument values
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum ParsingError {
     #[error("{0}")]
     ArgumentGroupError(ArgumentGroupError),
+    #[error("{0}")]
+    AddArgumentError(AddArgumentError),
     #[error("argument {0} expected {1} values, but found {2}")]
     IncorrectValueCount(String, NArgs, usize),
     #[error("missing values for required flag aruments {0}")]
@@ -185,12 +177,77 @@ impl Display for ArgumentGroup {
     }
 }
 
+impl ArgumentAdder for ArgumentGroup {
+    fn add_argument<T: ToString>(
+        &self,
+        name: Vec<&str>,
+        action: Option<&str>,
+        nargs: Option<NArgs>,
+        constant: Option<Vec<T>>,
+        default: Option<ArgumentDefault<T>>,
+        choices: Option<Vec<Vec<T>>>,
+        required: Option<bool>,
+        help: Option<&str>,
+        metavar: Option<&str>,
+        dest: Option<&str>,
+        version: Option<&str>,
+    ) -> Result<Self, AddArgumentError> {
+        let mut new_group = self.clone();
+        new_group.parser = self.parser.add_argument(
+            name, action, nargs, constant, default, choices, required, help, metavar, dest, version,
+        )?;
+        Ok(new_group)
+    }
+    fn get_current_arg_builder(&self) -> Option<ArgumentBuilder> {
+        self.parser.arg_builder.clone()
+    }
+
+    fn set_current_arg_builder(&self, new_arg_builder: ArgumentBuilder) -> Self {
+        let mut new = self.clone();
+        new.parser.arg_builder = Some(new_arg_builder);
+        new
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MutuallyExclusiveGroup(ArgumentGroup);
 
 impl Default for MutuallyExclusiveGroup {
     fn default() -> Self {
         Self::new(None, None, None, None, None).unwrap()
+    }
+}
+
+impl ArgumentAdder for MutuallyExclusiveGroup {
+    fn add_argument<T: ToString>(
+        &self,
+        name: Vec<&str>,
+        action: Option<&str>,
+        nargs: Option<NArgs>,
+        constant: Option<Vec<T>>,
+        default: Option<ArgumentDefault<T>>,
+        choices: Option<Vec<Vec<T>>>,
+        required: Option<bool>,
+        help: Option<&str>,
+        metavar: Option<&str>,
+        dest: Option<&str>,
+        version: Option<&str>,
+    ) -> Result<Self, AddArgumentError> {
+        let mut new_group = self.clone();
+        new_group.0 = self.0.add_argument(
+            name, action, nargs, constant, default, choices, required, help, metavar, dest, version,
+        )?;
+        Ok(new_group)
+    }
+
+    fn get_current_arg_builder(&self) -> Option<ArgumentBuilder> {
+        self.0.parser.arg_builder.clone()
+    }
+
+    fn set_current_arg_builder(&self, new_arg_builder: ArgumentBuilder) -> Self {
+        let mut new = self.clone();
+        new.0.parser.arg_builder = Some(new_arg_builder);
+        new
     }
 }
 
@@ -225,27 +282,6 @@ impl MutuallyExclusiveGroup {
             )
             .unwrap(),
         }))
-    }
-
-    pub fn add_argument<T: ToString>(
-        &self,
-        name: Vec<&str>,
-        action: Option<&str>,
-        nargs: Option<NArgs>,
-        constant: Option<Vec<T>>,
-        default: Option<ArgumentDefault<T>>,
-        choices: Option<Vec<Vec<T>>>,
-        required: Option<bool>,
-        help: Option<&str>,
-        metavar: Option<&str>,
-        dest: Option<&str>,
-        version: Option<&str>,
-    ) -> Result<Self, AddArgumentError> {
-        let mut new_group = self.clone();
-        new_group.0 = self.0.add_argument(
-            name, action, nargs, constant, default, choices, required, help, metavar, dest, version,
-        )?;
-        Ok(new_group)
     }
 }
 
@@ -369,6 +405,7 @@ pub struct ArgumentParser {
     subparser_managers: Option<Vec<SubparserManager>>,
     argument_groups: Vec<ArgumentGroup>, // TODO make these optional?
     arg_name_to_arg_group: HashMap<ArgumentName, usize>,
+    arg_builder: Option<ArgumentBuilder>,
 }
 
 impl Display for ArgumentParser {
@@ -406,6 +443,69 @@ impl Display for ArgumentParser {
 impl Default for ArgumentParser {
     fn default() -> Self {
         ArgumentParser::new(None, None, None, None, None, None, None, None, None, None).unwrap()
+    }
+}
+
+impl ArgumentAdder for ArgumentParser {
+    fn add_argument<T: ToString>(
+        &self,
+        name: Vec<&str>,
+        action: Option<&str>,
+        nargs: Option<NArgs>,
+        constant: Option<Vec<T>>,
+        default: Option<ArgumentDefault<T>>,
+        choices: Option<Vec<Vec<T>>>,
+        required: Option<bool>,
+        help: Option<&str>,
+        metavar: Option<&str>,
+        dest: Option<&str>,
+        version: Option<&str>,
+    ) -> Result<ArgumentParser, AddArgumentError> {
+        let arg_name: ArgumentName = ArgumentName::new(name, &self.prefix_chars)
+            .map_err(|e| AddArgumentError::ArgumentError(ArgumentError::ArgumentNameError(e)))?
+            .clone();
+
+        // this shouldn't happen often
+        let constant = constant.map(|x| x.into_iter().map(|y| y.to_string()).collect());
+        let default: Option<ArgumentDefault<String>> = default.map(|v| match v {
+            ArgumentDefault::None => ArgumentDefault::None,
+            ArgumentDefault::Suppress => ArgumentDefault::Suppress,
+            ArgumentDefault::Value(vec) => {
+                ArgumentDefault::Value(vec.into_iter().map(|x| x.to_string()).collect())
+            }
+        });
+        let choices = choices.map(|inner| {
+            inner
+                .into_iter()
+                .map(|choice| choice.into_iter().map(|x| x.to_string()).collect())
+                .collect()
+        });
+
+        let new_argument = Argument::new(
+            arg_name, action, nargs, constant, default, choices, required, help, metavar, dest,
+            version,
+        )
+        .map_err(AddArgumentError::ArgumentError)?;
+
+        let (new_flag_args, new_positional_args, new_arg_name_mapping) = self
+            .check_dup_arg_names(&new_argument)
+            .map_err(AddArgumentError::ArgumentError)?;
+
+        let mut new_parser = self.clone();
+        new_parser.positional_args = new_positional_args;
+        new_parser.flag_args = new_flag_args;
+        new_parser.arg_name_mapping = new_arg_name_mapping;
+        new_parser.store_argument(new_argument, dest)
+    }
+
+    fn get_current_arg_builder(&self) -> Option<ArgumentBuilder> {
+        self.arg_builder.clone()
+    }
+
+    fn set_current_arg_builder(&self, new_arg_builder: ArgumentBuilder) -> Self {
+        let mut new = self.clone();
+        new.arg_builder = Some(new_arg_builder);
+        new
     }
 }
 
@@ -450,6 +550,7 @@ impl ArgumentParser {
             subparser_managers: None,
             argument_groups: vec![],
             arg_name_to_arg_group: HashMap::new(),
+            arg_builder: None,
         };
 
         if add_help.unwrap_or(true) && !parser.help_arg_added {
@@ -845,6 +946,7 @@ impl ArgumentParser {
             subparser_managers: self.subparser_managers.clone(),
             argument_groups: self.argument_groups.clone(),
             arg_name_to_arg_group: self.arg_name_to_arg_group.clone(),
+            arg_builder: self.arg_builder.clone(),
         };
 
         if let Action::AppendConst(_) = argument.action() {
@@ -914,72 +1016,6 @@ impl ArgumentParser {
         new_arg_idx_mapping
     }
 
-    pub fn add_argument<T: ToString>(
-        &self,
-        name: Vec<&str>,
-        action: Option<&str>,
-        nargs: Option<NArgs>,
-        constant: Option<Vec<T>>,
-        default: Option<ArgumentDefault<T>>,
-        choices: Option<Vec<Vec<T>>>,
-        required: Option<bool>,
-        help: Option<&str>,
-        metavar: Option<&str>,
-        dest: Option<&str>,
-        version: Option<&str>,
-    ) -> Result<ArgumentParser, AddArgumentError> {
-        let arg_name: ArgumentName = ArgumentName::new(name, &self.prefix_chars)
-            .map_err(|e| AddArgumentError::ArgumentError(ArgumentError::ArgumentNameError(e)))?
-            .clone();
-
-        // this shouldn't happen often
-        let constant = constant.map(|x| x.into_iter().map(|y| y.to_string()).collect());
-        let default: Option<ArgumentDefault<String>> = default.map(|v| match v {
-            ArgumentDefault::None => ArgumentDefault::None,
-            ArgumentDefault::Suppress => ArgumentDefault::Suppress,
-            ArgumentDefault::Value(vec) => {
-                ArgumentDefault::Value(vec.into_iter().map(|x| x.to_string()).collect())
-            }
-        });
-        let choices = choices.map(|inner| {
-            inner
-                .into_iter()
-                .map(|choice| choice.into_iter().map(|x| x.to_string()).collect())
-                .collect()
-        });
-
-        let new_argument = Argument::new(
-            arg_name, action, nargs, constant, default, choices, required, help, metavar, dest,
-            version,
-        )
-        .map_err(AddArgumentError::ArgumentError)?;
-
-        let (new_flag_args, new_positional_args, new_arg_name_mapping) = self
-            .check_dup_arg_names(&new_argument)
-            .map_err(AddArgumentError::ArgumentError)?;
-
-        let new_parser = ArgumentParser {
-            positional_args: new_positional_args,
-            flag_args: new_flag_args,
-            arg_name_mapping: new_arg_name_mapping,
-
-            usage: self.usage.clone(),
-            desp: self.desp.clone(),
-            prog: self.prog.clone(),
-            epilog: self.epilog.clone(),
-            prefix_chars: self.prefix_chars.clone(),
-            suppress_missing_attributes: self.suppress_missing_attributes,
-            allow_abbrev: self.allow_abbrev, // TODO correct default
-            conflict_handler: self.conflict_handler,
-            help_arg_added: self.help_arg_added,
-            version_arg_added: self.version_arg_added,
-            subparser_managers: self.subparser_managers.clone(),
-            argument_groups: self.argument_groups.clone(),
-            arg_name_to_arg_group: self.arg_name_to_arg_group.clone(),
-        };
-        new_parser.store_argument(new_argument, dest)
-    }
-
     pub fn arguments(&self) -> Vec<&Argument> {
         let mut arguments = Vec::new();
         for argument in self.positional_args.iter() {
@@ -994,7 +1030,42 @@ impl ArgumentParser {
         arguments
     }
 
-    fn parse_raw_args(
+    fn set_values_of_other(&mut self, other: ArgumentParser) {
+        self.positional_args = other.positional_args;
+        self.flag_args = other.flag_args;
+        self.arg_name_mapping = other.arg_name_mapping;
+        self.usage = other.usage;
+        self.desp = other.desp;
+        self.prog = other.prog;
+        self.epilog = other.epilog;
+        self.prefix_chars = other.prefix_chars;
+        self.suppress_missing_attributes = other.suppress_missing_attributes;
+        self.allow_abbrev = other.allow_abbrev;
+        self.help_arg_added = other.help_arg_added;
+        self.version_arg_added = other.version_arg_added;
+        self.conflict_handler = other.conflict_handler;
+        self.subparser_managers = other.subparser_managers;
+        self.argument_groups = other.argument_groups;
+        self.arg_name_to_arg_group = other.arg_name_to_arg_group;
+        self.arg_builder = other.arg_builder;
+    }
+
+    fn parse_raw_args_with_arg_builder(
+        &mut self,
+        raw_args: Option<Vec<String>>,
+        keep_or_error_unknown_args: bool,
+    ) -> Result<(Namespace, Vec<String>), ParsingError> {
+        // add last argument builder if there is one
+        if self.arg_builder.is_some() {
+            let new = self
+                .add_argument_builder()
+                .map_err(|x| ParsingError::AddArgumentError(x))?; // TODO should this behere
+            self.set_values_of_other(new);
+        }
+        self.parse_raw_args_without_arg_builder(raw_args, keep_or_error_unknown_args)
+    }
+
+    fn parse_raw_args_without_arg_builder(
         &self,
         raw_args: Option<Vec<String>>,
         keep_or_error_unknown_args: bool,
@@ -1056,10 +1127,10 @@ impl ArgumentParser {
                 if let Some(subparser) = self.get_subparser(cur_raw_arg.to_string()) {
                     // TODO run subparser on remaining args, concat results at end
                     let remaining_args: Vec<String> = raw_args[idx + 1..].to_vec();
-                    subparser_parsing = Some(
-                        subparser
-                            .parse_raw_args(Some(remaining_args), keep_or_error_unknown_args)?,
-                    );
+                    subparser_parsing = Some(subparser.parse_raw_args_without_arg_builder(
+                        Some(remaining_args),
+                        keep_or_error_unknown_args,
+                    )?);
                     break;
                 }
 
@@ -1601,17 +1672,17 @@ impl ArgumentParser {
         }
     }
 
-    pub fn parse_args(&self, raw_args: Option<Vec<String>>) -> Result<Namespace, ParsingError> {
-        let (namespace, remaining_args) = self.parse_raw_args(raw_args, false)?;
+    pub fn parse_args(&mut self, raw_args: Option<Vec<String>>) -> Result<Namespace, ParsingError> {
+        let (namespace, remaining_args) = self.parse_raw_args_with_arg_builder(raw_args, false)?;
         debug_assert!(remaining_args.is_empty());
         Ok(namespace)
     }
 
     pub fn parse_known_args(
-        &self,
+        &mut self,
         raw_args: Option<Vec<String>>,
     ) -> Result<(Namespace, Vec<String>), ParsingError> {
-        self.parse_raw_args(raw_args, true)
+        self.parse_raw_args_with_arg_builder(raw_args, true)
     }
 
     pub fn add_subparsers(
@@ -1656,7 +1727,6 @@ impl ArgumentParser {
 
     pub fn add_argument_group(&self, group: ArgumentGroup) -> Result<Self, ArgumentParserError> {
         let mut new_parser = self.clone();
-        println!("{:?}", group);
         new_parser = new_parser.add_parser_arguments(&group.parser)?;
 
         new_parser.argument_groups.push(group.clone());
@@ -1714,6 +1784,7 @@ mod test {
     use crate::{
         argument::ArgumentError,
         argument_parser::{AddArgumentError, ArgumentParserError},
+        builder::ArgumentAdder,
         conclict_handling_strategy::ConflictHandlingStrategyError,
         prefix_chars::PrefixCharsError,
     };
@@ -1959,6 +2030,7 @@ mod test {
         use crate::{
             argument::ArgumentError,
             argument_parser::{AddArgumentError, ArgumentParser, ArgumentParserError},
+            builder::ArgumentAdder,
         };
 
         #[test]
@@ -2033,8 +2105,8 @@ mod test {
                 None,
             );
             assert!(child.is_ok());
-            let child = child.unwrap();
             let namespace = child
+                .unwrap()
                 .parse_args(Some(vec!["--foo".to_string(), "bar".to_string()]))
                 .unwrap();
             assert_eq!(
