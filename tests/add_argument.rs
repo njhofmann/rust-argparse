@@ -1,15 +1,16 @@
 mod add_argument {
-    use std::{fmt::Display, str::FromStr};
-
+    use py_arg_parse::builder::ArgumentAdder;
+    use py_arg_parse::builder::AddArgumentError;
     use py_arg_parse::{
         argument::{Argument, ArgumentError},
         argument_name::ArgumentName,
-        argument_parser::{AddArgumentError, ArgumentParser},
+        argument_parser::{ ArgumentParser},
         default::ArgumentDefault,
         nargs::NArgs,
         parse_result::RetrievalError,
         prefix_chars::PrefixChars,
     };
+    use std::{fmt::Display, str::FromStr};
 
     #[test]
     fn parser_with_help() {
@@ -59,7 +60,7 @@ mod add_argument {
 
     #[test]
     fn missing_non_required_argument_no_value_() {
-        let parser = ArgumentParser::default()
+        let mut parser = ArgumentParser::default()
             .add_argument::<&str>(
                 vec!["--foo"],
                 None,
@@ -80,7 +81,7 @@ mod add_argument {
 
     #[test]
     fn missing_non_required_argument_no_value_global_suppress() {
-        let parser = ArgumentParser::new(
+        let mut parser = ArgumentParser::new(
             None,
             None,
             None,
@@ -116,7 +117,7 @@ mod add_argument {
 
     #[test]
     fn missing_non_required_argument_no_value_global_suppress_override() {
-        let parser = ArgumentParser::new(
+        let mut parser = ArgumentParser::new(
             None,
             None,
             None,
@@ -152,7 +153,7 @@ mod add_argument {
 
     #[test]
     fn missing_non_required_argument_no_value_local_suppress() {
-        let parser = ArgumentParser::default()
+        let mut parser = ArgumentParser::default()
             .add_argument::<&str>(
                 vec!["--foo"],
                 None,
@@ -176,7 +177,7 @@ mod add_argument {
 
     #[test]
     fn add_duplicate_argument_name_with_overlap_error() {
-        let parser = ArgumentParser::new(
+        let mut parser = ArgumentParser::new(
             None,
             None,
             None,

@@ -1,10 +1,12 @@
 mod extraneous_parsing {
 
     mod long_optional_value {
+        use py_arg_parse::builder::ArgumentAdder;
         use py_arg_parse::{
             argument_parser::{ArgumentParser, ParsingError},
             nargs::NArgs,
         };
+
         #[test]
         fn long_option_value_with_argument() {
             let namespace = ArgumentParser::default()
@@ -81,8 +83,7 @@ mod extraneous_parsing {
 
         mod short_option {
             use py_arg_parse::{
-                argument_parser::{ArgumentParser, ParsingError},
-                nargs::NArgs,
+                argument_parser::{ArgumentParser, ParsingError}, builder::ArgumentAdder, nargs::NArgs
             };
             #[test]
             fn multiple_short_flags() {
@@ -293,7 +294,7 @@ mod extraneous_parsing {
 
             #[test]
             fn all_remaining_args_positional() {
-                let parser = ArgumentParser::default()
+                let mut parser = ArgumentParser::default()
                     .add_argument::<&str>(
                         vec!["a"],
                         None,

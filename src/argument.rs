@@ -273,10 +273,17 @@ impl Argument {
         match (default.clone(), nargs) {
             (ArgumentDefault::Value(_), NArgs::AnyNumber)
             | (ArgumentDefault::Value(_), NArgs::OneOrMore) => Ok(()),
-            (ArgumentDefault::Value(_), n) => Err(ArgumentError::DefaultValueForInvalidNargs(
-                name.to_string(),
-                n.to_string(),
-            )),
+            (ArgumentDefault::Value(v), n) => {
+                if n.is_valid_number(v.len()) {
+                    Ok(())
+                } else {
+                    Err(ArgumentError::DefaultValueForInvalidNargs(
+                        name.to_string(),
+                        n.to_string(),
+                    ))
+                }
+
+            },
             _ => Ok(()),
         }?;
 

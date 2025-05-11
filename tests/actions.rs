@@ -1,5 +1,6 @@
 mod actions {
     use py_arg_parse::argument_parser::ArgumentParser;
+    use py_arg_parse::builder::ArgumentAdder;
     use py_arg_parse::parse_result::RetrievalError;
 
     mod parse_known_args {
@@ -9,7 +10,7 @@ mod actions {
 
         #[test]
         fn test() {
-            let parser = ArgumentParser::default()
+            let mut parser = ArgumentParser::default()
                 .add_argument::<&str>(
                     vec!["--foo"],
                     Some("store_true"),
@@ -66,7 +67,7 @@ mod actions {
 
         #[test]
         fn var_posn_then_var_flag_then_var_posn() {
-            let parser = ArgumentParser::default()
+            let mut parser = ArgumentParser::default()
                 .add_argument::<&str>(
                     vec!["a"],
                     None,
@@ -135,7 +136,7 @@ mod actions {
 
         #[test]
         fn var_posn_then_fixed_flag_then_var_posn() {
-            let parser = ArgumentParser::default()
+            let mut parser = ArgumentParser::default()
                 .add_argument::<&str>(
                     vec!["a"],
                     None,
@@ -203,7 +204,7 @@ mod actions {
 
         #[test]
         fn var_posn_then_var_flag_then_one_or_more_posn() {
-            let parser = ArgumentParser::default()
+            let  mut parser = ArgumentParser::default()
                 .add_argument::<&str>(
                     vec!["a"],
                     None,
@@ -453,7 +454,7 @@ mod actions {
 
         #[test]
         fn allow_abbrev_conflicting_result() {
-            let parser = ArgumentParser::default()
+            let mut parser = ArgumentParser::default()
                 .add_argument::<&str>(
                     vec!["--beam"],
                     None,
@@ -495,7 +496,7 @@ mod actions {
 
         #[test]
         fn same_name_diff_n_prefixes() {
-            let parser = ArgumentParser::new(
+            let mut parser = ArgumentParser::new(
                 None,
                 None,
                 None,
@@ -634,7 +635,7 @@ mod actions {
 
         #[test]
         fn allow_abbrev_false() {
-            let parser = ArgumentParser::new(
+            let mut parser = ArgumentParser::new(
                 None,
                 None,
                 None,
@@ -831,7 +832,7 @@ mod actions {
 
         #[test]
         fn append_const() {
-            let parser = ArgumentParser::default()
+            let  mut parser = ArgumentParser::default()
                 .add_argument::<&str>(
                     vec!["--foo", "-f"],
                     Some("append_const"),
@@ -909,7 +910,7 @@ mod actions {
                     None,
                 )
                 .unwrap();
-            let child = ArgumentParser::new(
+            let mut child = ArgumentParser::new(
                 None,
                 None,
                 None,

@@ -1,12 +1,12 @@
 #[cfg(test)]
 mod ordering {
     use py_arg_parse::argument_parser::ArgumentParser;
+    use py_arg_parse::builder::ArgumentAdder;
     use py_arg_parse::nargs::NArgs;
     use py_arg_parse::parse_result::Namespace;
-
     #[test]
     fn diff_add_arg_ordering_same_result() {
-        let parser_a = ArgumentParser::default()
+        let mut parser_a = ArgumentParser::default()
             .add_argument::<&str>(
                 vec!["--foo", "-f"],
                 None,
@@ -36,7 +36,7 @@ mod ordering {
             )
             .unwrap();
 
-        let parser_b = ArgumentParser::default()
+        let  mut parser_b = ArgumentParser::default()
             .add_argument::<&str>(
                 vec!["boo"],
                 None,

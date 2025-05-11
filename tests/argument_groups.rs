@@ -1,5 +1,6 @@
 mod argument_groups {
     mod mutually_exclusive {
+        use py_arg_parse::builder::ArgumentAdder;
         use py_arg_parse::{
             argument_parser::{
                 ArgumentGroupError, ArgumentParser, MutuallyExclusiveGroup, ParsingError,
@@ -42,7 +43,7 @@ mod argument_groups {
                     None,
                 )
                 .unwrap();
-            let parser = ArgumentParser::default()
+            let mut parser = ArgumentParser::default()
                 .add_mutually_exclusive_group(group)
                 .unwrap()
                 .add_argument::<&str>(
@@ -107,7 +108,7 @@ mod argument_groups {
                     None,
                 )
                 .unwrap();
-            let parser = ArgumentParser::default()
+            let mut parser = ArgumentParser::default()
                 .add_mutually_exclusive_group(group)
                 .unwrap()
                 .add_argument::<&str>(
@@ -169,7 +170,7 @@ mod argument_groups {
                     None,
                 )
                 .unwrap();
-            let parser =
+            let mut parser =
                 ArgumentParser::new(None, None, None, None, None, None, None, None, None, None)
                     .unwrap()
                     .add_mutually_exclusive_group(group)
@@ -233,7 +234,7 @@ mod argument_groups {
                     None,
                 )
                 .unwrap();
-            let parser = ArgumentParser::default()
+            let mut parser = ArgumentParser::default()
                 .add_mutually_exclusive_group(group)
                 .unwrap();
             let err = parser
@@ -284,7 +285,7 @@ mod argument_groups {
                     None,
                 )
                 .unwrap();
-            let parser = ArgumentParser::default()
+            let mut parser = ArgumentParser::default()
                 .add_mutually_exclusive_group(group.clone())
                 .unwrap();
             let err = parser.parse_args(Some(vec![])).unwrap_err();
@@ -509,9 +510,10 @@ mod argument_groups {
     }
 
     mod argument_group {
+       use  py_arg_parse::builder::AddArgumentError;
         use py_arg_parse::{
             argument::ArgumentError,
-            argument_parser::{AddArgumentError, ArgumentGroup, ArgumentParser},
+            argument_parser::{ ArgumentGroup, ArgumentParser}, builder::ArgumentAdder,
         };
 
         #[test]
@@ -546,7 +548,7 @@ mod argument_groups {
                     None,
                 )
                 .unwrap();
-            let parser = ArgumentParser::default().add_argument_group(group).unwrap();
+            let mut parser = ArgumentParser::default().add_argument_group(group).unwrap();
             let namespace = parser
                 .parse_args(Some(vec!["-g".to_string(), "val".to_string()]))
                 .unwrap();

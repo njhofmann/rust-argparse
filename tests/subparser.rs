@@ -1,6 +1,6 @@
 mod subparsers {
     use py_arg_parse::argument_parser::{ArgumentParser, SubparserError, SubparserManager};
-
+    use py_arg_parse::builder::ArgumentAdder;
     #[test]
     fn conflicting_names_same_subparser_manager() {
         let subparser_a = ArgumentParser::default()
@@ -157,7 +157,7 @@ mod subparsers {
             .unwrap()
             .add_parser("sub_b", subparser_b, None)
             .unwrap();
-        let parent = ArgumentParser::default()
+        let mut parent = ArgumentParser::default()
             .add_argument::<&str>(
                 vec!["--tar"],
                 None,
@@ -443,7 +443,7 @@ mod subparsers {
             .unwrap()
             .add_parser("sub_b", subparser_b, None)
             .unwrap();
-        let parent = ArgumentParser::default()
+        let mut parent = ArgumentParser::default()
             .add_argument::<&str>(
                 vec!["--tar"],
                 None,

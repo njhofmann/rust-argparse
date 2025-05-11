@@ -387,6 +387,114 @@ impl Default for SubparserManager {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ArgumentParserBuilder {
+    prog: Option<String>,
+    usage: Option<String>, // TODO program usage from arguments
+    description: Option<String>,
+    epilog: Option<String>,
+    parents: Option<Vec<ArgumentParser>>,
+    prefix_chars: Option<String>,
+    suppress_missing_attributes: Option<bool>,
+    conflict_handler: Option<String>,
+    add_help: Option<bool>,
+    allow_abbrev: Option<bool>,
+}
+
+impl ArgumentParserBuilder {
+    // TODO add argparser defaults here
+    fn new() -> Self {
+        Self {
+            prog: todo!(),
+            usage: todo!(),
+            description: todo!(),
+            epilog: todo!(),
+            parents: todo!(),
+            prefix_chars: todo!(),
+            suppress_missing_attributes: todo!(),
+            conflict_handler: todo!(),
+            add_help: todo!(),
+            allow_abbrev: todo!(),
+        }
+    }
+
+    fn build(&mut self) -> Result<ArgumentParser, ArgumentParserError> {
+        ArgumentParser::new(
+            self.prog.as_deref(),
+            self.usage.as_deref(),
+            self.description.as_deref(),
+            self.epilog.as_deref(),
+            self.parents.clone(),
+            self.prefix_chars.as_deref(),
+            self.suppress_missing_attributes,
+            self.conflict_handler.as_deref(),
+            self.add_help,
+            self.allow_abbrev,
+        )
+    }
+
+    fn with_prog(&mut self, prog: &str) -> &mut Self {
+        self.prog = Some(prog.to_string());
+        self
+    }
+
+    fn with_usage(&mut self, usage: &str) -> &mut Self {
+        self.usage = Some(usage.to_string());
+        self
+    }
+
+    fn with_epilog(&mut self, epilog: &str) -> &mut Self {
+        self.epilog = Some(epilog.to_string());
+        self
+    }
+
+    fn with_parents(&mut self, parents: &mut Vec<ArgumentParser>) -> &mut Self {
+        if !parents.is_empty() {
+            if self.parents.is_some() {
+                self.parents.as_mut().unwrap().append(parents);
+            } else {
+                self.parents = Some(parents.to_vec())
+            }
+        }
+        self
+    }
+
+    fn with_parent(&mut self, parent: ArgumentParser) -> &mut Self {
+        if self.parents.is_some() {
+            self.parents.as_mut().unwrap().push(parent);
+        } else {
+            self.parents = Some(vec![parent]);
+        }
+        self
+    }
+
+    fn with_prefix_chars(&mut self, usage: &str) -> &mut Self {
+        self.prefix_chars = Some(usage.to_string());
+        self
+    }
+
+
+    fn with_suppress_missing_attributes(&mut self, suppress: bool) -> &mut Self {
+        self.suppress_missing_attributes = Some(suppress);
+        self
+    }
+
+    fn with_conflict_handler(&mut self, handler: &str) -> &mut Self {
+        self.conflict_handler = Some(handler.to_string());
+        self
+    }
+
+    fn add_help(&mut self, add: bool) -> &mut Self {
+        self.add_help = Some(add);
+        self
+    }
+    
+    fn with_allow_abbrev(&mut self, allow: bool) -> &mut Self {
+        self.allow_abbrev = Some(allow);
+        self
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ArgumentParser {
     positional_args: Vec<Argument>,
     flag_args: Vec<Argument>,
@@ -442,6 +550,7 @@ impl Display for ArgumentParser {
 
 impl Default for ArgumentParser {
     fn default() -> Self {
+        // TODO place default values here? test breakage? have parser set values in new::() based off a default
         ArgumentParser::new(None, None, None, None, None, None, None, None, None, None).unwrap()
     }
 }

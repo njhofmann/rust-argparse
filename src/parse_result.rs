@@ -166,9 +166,7 @@ impl Namespace {
 mod test {
 
     use crate::{
-        argument_parser::{ArgumentParser, ParsingError},
-        default::ArgumentDefault,
-        nargs::NArgs,
+        argument_parser::{ArgumentParser, ParsingError}, builder::ArgumentAdder, default::ArgumentDefault, nargs::NArgs
     };
 
     use super::Namespace;
