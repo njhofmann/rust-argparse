@@ -282,8 +282,7 @@ impl Argument {
                         n.to_string(),
                     ))
                 }
-
-            },
+            }
             _ => Ok(()),
         }?;
 
@@ -301,49 +300,22 @@ impl Argument {
         })
     }
 
-    pub fn with_action(&self, new_action: Action) -> Argument {
-        Argument {
-            name: self.name.clone(),
-            required: self.required,
-            help: self.help.clone(),
-            nargs: self.nargs,
-            choices: self.choices.clone(),
-            default: self.default.clone(),
-            action: new_action,
-            metavar: self.metavar.clone(),
-            dest: self.dest.clone(),
-            is_helper_arg: self.is_helper_arg,
-        }
+    pub fn with_action(&self, action: Action) -> Argument {
+        let mut new = self.clone();
+        new.action = action;
+        new
     }
 
     pub fn with_name(&self, name: ArgumentName) -> Argument {
-        Argument {
-            name: name,
-            required: self.required,
-            help: self.help.clone(),
-            nargs: self.nargs,
-            choices: self.choices.clone(),
-            default: self.default.clone(),
-            action: self.action.clone(),
-            metavar: self.metavar.clone(),
-            dest: self.dest.clone(),
-            is_helper_arg: self.is_helper_arg,
-        }
+        let mut new = self.clone();
+        new.name = name;
+        new
     }
 
-    pub fn with_nargs(&self, new_nargs: NArgs) -> Argument {
-        Argument {
-            name: self.name.clone(),
-            required: self.required,
-            help: self.help.clone(),
-            nargs: new_nargs,
-            choices: self.choices.clone(),
-            default: self.default.clone(),
-            action: self.action.clone(),
-            metavar: self.metavar.clone(),
-            dest: self.dest.clone(),
-            is_helper_arg: self.is_helper_arg,
-        }
+    pub fn with_nargs(&self, nargs: NArgs) -> Argument {
+        let mut new = self.clone();
+        new.nargs = nargs;
+        new
     }
 
     pub fn arg_value_in_choices(&self, raw_arg: &Vec<String>) -> Result<(), ChoicesError> {
@@ -489,7 +461,7 @@ impl Argument {
     }
 
     pub fn is_helper_arg(&self) -> bool {
-        return self.is_helper_arg;
+        self.is_helper_arg
     }
 
     pub fn name_overlap(&self, other: &Argument) -> Vec<(usize, String, Option<(usize, String)>)> {

@@ -204,7 +204,7 @@ mod actions {
 
         #[test]
         fn var_posn_then_var_flag_then_one_or_more_posn() {
-            let  mut parser = ArgumentParser::default()
+            let mut parser = ArgumentParser::default()
                 .add_argument::<&str>(
                     vec!["a"],
                     None,
@@ -832,7 +832,7 @@ mod actions {
 
         #[test]
         fn append_const() {
-            let  mut parser = ArgumentParser::default()
+            let mut parser = ArgumentParser::default()
                 .add_argument::<&str>(
                     vec!["--foo", "-f"],
                     Some("append_const"),

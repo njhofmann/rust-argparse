@@ -83,7 +83,9 @@ mod extraneous_parsing {
 
         mod short_option {
             use py_arg_parse::{
-                argument_parser::{ArgumentParser, ParsingError}, builder::ArgumentAdder, nargs::NArgs
+                argument_parser::{ArgumentParser, ParsingError},
+                builder::ArgumentAdder,
+                nargs::NArgs,
             };
             #[test]
             fn multiple_short_flags() {

@@ -510,10 +510,11 @@ mod argument_groups {
     }
 
     mod argument_group {
-       use  py_arg_parse::builder::AddArgumentError;
+        use py_arg_parse::builder::AddArgumentError;
         use py_arg_parse::{
             argument::ArgumentError,
-            argument_parser::{ ArgumentGroup, ArgumentParser}, builder::ArgumentAdder,
+            argument_parser::{ArgumentGroup, ArgumentParser},
+            builder::ArgumentAdder,
         };
 
         #[test]

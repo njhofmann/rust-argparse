@@ -1,10 +1,10 @@
 mod add_argument {
-    use py_arg_parse::builder::ArgumentAdder;
     use py_arg_parse::builder::AddArgumentError;
+    use py_arg_parse::builder::ArgumentAdder;
     use py_arg_parse::{
         argument::{Argument, ArgumentError},
         argument_name::ArgumentName,
-        argument_parser::{ ArgumentParser},
+        argument_parser::ArgumentParser,
         default::ArgumentDefault,
         nargs::NArgs,
         parse_result::RetrievalError,

@@ -36,7 +36,7 @@ mod ordering {
             )
             .unwrap();
 
-        let  mut parser_b = ArgumentParser::default()
+        let mut parser_b = ArgumentParser::default()
             .add_argument::<&str>(
                 vec!["boo"],
                 None,

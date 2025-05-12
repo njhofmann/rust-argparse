@@ -401,23 +401,22 @@ pub struct ArgumentParserBuilder {
 }
 
 impl ArgumentParserBuilder {
-    // TODO add argparser defaults here
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
-            prog: todo!(),
-            usage: todo!(),
-            description: todo!(),
-            epilog: todo!(),
-            parents: todo!(),
-            prefix_chars: todo!(),
-            suppress_missing_attributes: todo!(),
-            conflict_handler: todo!(),
-            add_help: todo!(),
-            allow_abbrev: todo!(),
+            prog: None,
+            usage: None,
+            description: None,
+            epilog: None,
+            parents: None,
+            prefix_chars: None,
+            suppress_missing_attributes: None,
+            conflict_handler: None,
+            add_help: None,
+            allow_abbrev: None,
         }
     }
 
-    fn build(&mut self) -> Result<ArgumentParser, ArgumentParserError> {
+    pub fn build(&mut self) -> Result<ArgumentParser, ArgumentParserError> {
         ArgumentParser::new(
             self.prog.as_deref(),
             self.usage.as_deref(),
@@ -432,22 +431,27 @@ impl ArgumentParserBuilder {
         )
     }
 
-    fn with_prog(&mut self, prog: &str) -> &mut Self {
+    pub fn with_prog(&mut self, prog: &str) -> &mut Self {
         self.prog = Some(prog.to_string());
         self
     }
 
-    fn with_usage(&mut self, usage: &str) -> &mut Self {
+    pub fn with_usage(&mut self, usage: &str) -> &mut Self {
         self.usage = Some(usage.to_string());
         self
     }
 
-    fn with_epilog(&mut self, epilog: &str) -> &mut Self {
+    pub fn with_description(&mut self, desp: &str) -> &mut Self {
+        self.description = Some(desp.to_string());
+        self
+    }
+
+    pub fn with_epilog(&mut self, epilog: &str) -> &mut Self {
         self.epilog = Some(epilog.to_string());
         self
     }
 
-    fn with_parents(&mut self, parents: &mut Vec<ArgumentParser>) -> &mut Self {
+    pub fn with_parents(&mut self, parents: &mut Vec<ArgumentParser>) -> &mut Self {
         if !parents.is_empty() {
             if self.parents.is_some() {
                 self.parents.as_mut().unwrap().append(parents);
@@ -458,7 +462,7 @@ impl ArgumentParserBuilder {
         self
     }
 
-    fn with_parent(&mut self, parent: ArgumentParser) -> &mut Self {
+    pub fn with_parent(&mut self, parent: ArgumentParser) -> &mut Self {
         if self.parents.is_some() {
             self.parents.as_mut().unwrap().push(parent);
         } else {
@@ -467,28 +471,31 @@ impl ArgumentParserBuilder {
         self
     }
 
-    fn with_prefix_chars(&mut self, usage: &str) -> &mut Self {
-        self.prefix_chars = Some(usage.to_string());
+    pub fn with_prefix_chars(&mut self, chars: &str) -> &mut Self {
+        self.prefix_chars = Some(if let Some(old_chars) = self.prefix_chars.as_ref() {
+            old_chars.clone() + chars
+        } else {
+            chars.to_string()
+        });
         self
     }
 
-
-    fn with_suppress_missing_attributes(&mut self, suppress: bool) -> &mut Self {
+    pub fn with_suppress_missing_attributes(&mut self, suppress: bool) -> &mut Self {
         self.suppress_missing_attributes = Some(suppress);
         self
     }
 
-    fn with_conflict_handler(&mut self, handler: &str) -> &mut Self {
+    pub fn with_conflict_handler(&mut self, handler: &str) -> &mut Self {
         self.conflict_handler = Some(handler.to_string());
         self
     }
 
-    fn add_help(&mut self, add: bool) -> &mut Self {
+    pub fn with_help(&mut self, add: bool) -> &mut Self {
         self.add_help = Some(add);
         self
     }
-    
-    fn with_allow_abbrev(&mut self, allow: bool) -> &mut Self {
+
+    pub fn with_allow_abbrev(&mut self, allow: bool) -> &mut Self {
         self.allow_abbrev = Some(allow);
         self
     }
@@ -550,7 +557,6 @@ impl Display for ArgumentParser {
 
 impl Default for ArgumentParser {
     fn default() -> Self {
-        // TODO place default values here? test breakage? have parser set values in new::() based off a default
         ArgumentParser::new(None, None, None, None, None, None, None, None, None, None).unwrap()
     }
 }
