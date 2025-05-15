@@ -77,6 +77,58 @@ pub enum ArgumentGroupError {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ArgumentGroupBuilder {
+    title: Option<String>,
+    description: Option<String>,
+    suppress_missing_attributes: Option<bool>,
+    conflict_handler: Option<String>,
+}
+
+impl ArgumentGroupBuilder {
+    pub fn new() -> Self {
+        ArgumentGroupBuilder {
+            title: None,
+            description: None,
+            suppress_missing_attributes: None,
+            conflict_handler: None,
+        }
+    }
+
+    pub fn build(&self) -> Result<ArgumentGroup, ArgumentGroupError> {
+        ArgumentGroup::new(
+            self.title.as_deref(),
+            self.description.as_deref(),
+            self.suppress_missing_attributes,
+            self.conflict_handler.as_deref(),
+        )
+    }
+
+    pub fn with_title(&self, title: &str) -> Self {
+        let mut new = self.clone();
+        new.title = Some(title.to_string());
+        new
+    }
+
+    pub fn with_description(&self, desp: &str) -> Self {
+        let mut new = self.clone();
+        new.description = Some(desp.to_string());
+        new
+    }
+
+    pub fn with_suppress_missing_attributes(&self, suppress: bool) -> Self {
+        let mut new = self.clone();
+        new.suppress_missing_attributes = Some(suppress);
+        new
+    }
+
+    pub fn with_conflict_handler(&self, handler: &str) -> Self {
+        let mut new = self.clone();
+        new.conflict_handler = Some(handler.to_string());
+        new
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ArgumentGroup {
     title: Option<String>,
     description: Option<String>,
@@ -210,6 +262,57 @@ impl ArgumentAdder for ArgumentGroup {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+pub struct MutuallyExclusiveGroupBuilder {
+    arg_group_builder: ArgumentGroupBuilder,
+    required: Option<bool>,
+}
+
+impl MutuallyExclusiveGroupBuilder {
+    pub fn new() -> Self {
+        MutuallyExclusiveGroupBuilder {
+            arg_group_builder: ArgumentGroupBuilder::new(),
+            required: None,
+        }
+    }
+
+    pub fn build(&self) -> Result<MutuallyExclusiveGroup, ArgumentGroupError> {
+        MutuallyExclusiveGroup::new(
+            self.arg_group_builder.title.as_deref(),
+            self.arg_group_builder.description.as_deref(),
+            self.arg_group_builder.suppress_missing_attributes,
+            self.arg_group_builder.conflict_handler.as_deref(),
+            self.required,
+        )
+    }
+
+    pub fn with_title(&self, title: &str) -> Self {
+        let mut new = self.clone();
+        new.arg_group_builder = new.arg_group_builder.with_title(title);
+        new
+    }
+
+    pub fn with_description(&self, desp: &str) -> Self {
+        let mut new = self.clone();
+        new.arg_group_builder = new.arg_group_builder.with_description(desp);
+        new
+    }
+
+    pub fn with_suppress_missing_attributes(&self, suppress: bool) -> Self {
+        let mut new = self.clone();
+        new.arg_group_builder = new
+            .arg_group_builder
+            .with_suppress_missing_attributes(suppress);
+        new
+    }
+
+    pub fn with_conflict_handler(&self, handler: &str) -> Self {
+        let mut new = self.clone();
+        new.arg_group_builder = new.arg_group_builder.with_conflict_handler(handler);
+        new
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MutuallyExclusiveGroup(ArgumentGroup);
 
 impl Default for MutuallyExclusiveGroup {
@@ -252,6 +355,12 @@ impl ArgumentAdder for MutuallyExclusiveGroup {
 }
 
 impl MutuallyExclusiveGroup {
+    pub fn with_required(&self, required: bool) -> Self {
+        let mut new = self.clone();
+        new.0.required = required;
+        new
+    }
+
     pub fn new(
         title: Option<&str>,
         description: Option<&str>,
