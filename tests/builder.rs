@@ -7,7 +7,10 @@ mod builder {
     };
 
     mod arg_parser_builder {
-        use py_arg_parse::argument_parser::{ArgumentParser, ArgumentParserBuilder};
+        use py_arg_parse::{
+            argument_parser::{ArgumentParser, ArgumentParserBuilder},
+            builder::ArgumentAdder,
+        };
 
         #[test]
         fn with_prog() {
@@ -103,11 +106,129 @@ mod builder {
 
         #[test]
         fn with_parents() {
-            todo!()
+            let parent1 = ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                None,
+            )
+            .unwrap()
+            .add_argument::<&str>(
+                vec!["--foo"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            let parent2 = ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                None,
+            )
+            .unwrap()
+            .add_argument::<&str>(
+                vec!["--boo"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            assert_eq!(
+                ArgumentParserBuilder::new()
+                    .with_parents(vec![parent1.clone(), parent2.clone()])
+                    .build()
+                    .unwrap(),
+                ArgumentParser::new(
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(vec![parent1, parent2]),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+            )
         }
+
         #[test]
         fn with_parent() {
-            todo!()
+            let parent = ArgumentParser::new(
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(false),
+                None,
+            )
+            .unwrap()
+            .add_argument::<&str>(
+                vec!["--foo"],
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+            assert_eq!(
+                ArgumentParserBuilder::new()
+                    .with_parent(parent.clone())
+                    .build()
+                    .unwrap(),
+                ArgumentParser::new(
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(vec![parent]),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap()
+            )
         }
 
         #[test]
@@ -133,6 +254,7 @@ mod builder {
                 .unwrap()
             )
         }
+
         #[test]
         fn with_suppress_missing_attributes_true() {
             assert_eq!(
@@ -495,7 +617,6 @@ mod builder {
             .unwrap()
             .parse_args(Some(vec!["--foo".to_string(), "bar".to_string()]))
             .unwrap();
-        // TODO when parse arg call also add last arg builder for groups!
         let right = ArgumentParser::default()
             .add_mutually_exclusive_group(
                 MutuallyExclusiveGroup::default()
@@ -552,7 +673,6 @@ mod builder {
                 "por".to_string(),
             ]))
             .unwrap();
-        // TODO when parse arg call also add last arg builder for groups!
         let right = ArgumentParser::default()
             .add_argument_group(
                 ArgumentGroup::default()

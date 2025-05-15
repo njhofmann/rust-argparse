@@ -451,10 +451,10 @@ impl ArgumentParserBuilder {
         self
     }
 
-    pub fn with_parents(&mut self, parents: &mut Vec<ArgumentParser>) -> &mut Self {
+    pub fn with_parents(&mut self, parents: Vec<ArgumentParser>) -> &mut Self {
         if !parents.is_empty() {
             if self.parents.is_some() {
-                self.parents.as_mut().unwrap().append(parents);
+                self.parents.as_mut().unwrap().append(&mut parents.clone());
             } else {
                 self.parents = Some(parents.to_vec())
             }
