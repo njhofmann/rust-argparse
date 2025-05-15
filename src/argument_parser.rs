@@ -1174,9 +1174,10 @@ impl ArgumentParser {
         if self.arg_builder.is_some() {
             let new = self
                 .add_argument_builder()
-                .map_err(|x| ParsingError::AddArgumentError(x))?; // TODO should this behere
+                .map_err(ParsingError::AddArgumentError)?; // TODO should this behere
             self.set_values_of_other(new);
         }
+
         self.parse_raw_args_without_arg_builder(raw_args, keep_or_error_unknown_args)
     }
 
@@ -1841,6 +1842,13 @@ impl ArgumentParser {
     }
 
     pub fn add_argument_group(&self, group: ArgumentGroup) -> Result<Self, ArgumentParserError> {
+        let group = if group.get_current_arg_builder().is_some() {
+            group
+                .add_argument_builder()
+                .map_err(|e| ArgumentParserError::AddArgumentError(e))?
+        } else {
+            group
+        };
         let mut new_parser = self.clone();
         new_parser = new_parser.add_parser_arguments(&group.parser)?;
 
